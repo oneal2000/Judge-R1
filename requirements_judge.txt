@@ -1,0 +1,15 @@
+torch==2.9.1
+transformers==4.57.2
+deepspeed==0.18.2
+peft==0.11.1
+tensorboardX==2.6.4
+tqdm==4.67.1
+numpy==2.2.6
+pynvml==13.0.1
+jieba==0.42.1
+bert-score==0.3.13
+nltk==3.9.1
+Levenshtein==0.27.3
+chinese2digits==6.0.2
+cn2an==0.5.23
+regex==2025.11.3

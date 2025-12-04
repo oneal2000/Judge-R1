@@ -1,0 +1,10 @@
+output/
+outputs/
+lfs/
+data/rl_train/
+data/train_sft
+
+.cache/
+
+__pycache__/
+*.py[cod]
