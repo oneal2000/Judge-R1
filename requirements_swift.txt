@@ -13,4 +13,6 @@ Levenshtein==0.27.3
 chinese2digits==6.0.2
 cn2an==0.5.23
 regex==2025.7.34
-pynvml==13.580.65
+pynvml==13.0.1
+beautifulsoup4==4.14.3
+lxml==6.0.2

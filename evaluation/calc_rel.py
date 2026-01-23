@@ -7,8 +7,8 @@ import sys
 sys.path.append('segment')
 from segment.data_segment_xingshi import DataSegmentXingshi
 # 如果第一次运行，需要添加下面两行
-# import nltk
-# nltk.download('wordnet')
+import nltk
+nltk.download('wordnet')
 
 class RelevanceEvaluator:
     def __init__(self, gen_file, exp_file):

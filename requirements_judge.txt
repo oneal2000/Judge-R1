@@ -13,3 +13,5 @@ Levenshtein==0.27.3
 chinese2digits==6.0.2
 cn2an==0.5.23
 regex==2025.11.3
+rank-bm25==0.2.2
+faiss-cpu==1.13.0

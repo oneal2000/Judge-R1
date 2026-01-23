@@ -1,0 +1,3 @@
+torch==2.7.1
+vllm
+transformers==4.57.3

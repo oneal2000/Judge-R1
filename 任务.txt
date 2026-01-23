@@ -1,4 +1,0 @@
-3.mrag训练测评
-4.lora1推理测评
-5.requirements.txt
-6.上传github

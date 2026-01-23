@@ -40,7 +40,7 @@ class MetricsCalculator:
     def calculate_percent_for_judge(self, exp_val, act_val):
         if exp_val == act_val == 0:
             return 1.0
-        if (exp_val >= 0 and act_val) < 0 or (exp_val < 0 and act_val >= 0):  # Different signs
+        if (exp_val >= 0 and act_val < 0) or (exp_val < 0 and act_val >= 0):
             return 0.0
         if (exp_val - 10000) * (act_val - 10000) < 0:  # Both must either have or lack the death penalty
             return 0.0
