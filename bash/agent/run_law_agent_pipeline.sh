@@ -3,7 +3,12 @@
 # LLM-based 法条检索 Agent 完整 Pipeline
 # 
 # 使用 RL 训练后的 QueryGen 和 LawSelect 模型
-# Pipeline: QueryGen(RL) → Dense Retriever (top-50) → Reranker (top-20) → LawSelect(RL)
+# Pipeline: QueryGen(RL) → Dense Retriever (top-100) → Reranker (top-50) → LawSelect(RL)
+#
+# 参数与 MRAG 对齐（MRAG 输出 50 条法条）：
+#   - DENSE_TOP_K=100: 扩大候选池
+#   - RERANK_TOP_K=50: 与 MRAG 输出数量对齐
+#   - MIN_SELECTED=20: 最终输出与 MRAG 对齐
 #
 # 包含: 
 #   1. 运行 Agent 检索（使用 RL 模型）
@@ -23,8 +28,15 @@ CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-7}
 export CUDA_VISIBLE_DEVICES
 GPU_MEMORY_UTIL=${GPU_MEMORY_UTIL:-0.5}
 
-# 基座 LLM 模型（3B，用于 fallback）
-BASE_MODEL="/data-share/LLM/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1"
+# 基座 LLM 模型（7B，用于 fallback）
+BASE_MODEL_7B="/data-share/chenxuanyi/LLM/Qwen2.5-7B-Instruct"
+BASE_MODEL_3B="/data-share/LLM/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1"
+# 优先使用 7B 模型
+if [[ -d "$BASE_MODEL_7B" ]]; then
+    BASE_MODEL="$BASE_MODEL_7B"
+else
+    BASE_MODEL="$BASE_MODEL_3B"
+fi
 LLM_MODEL="${LLM_MODEL:-${BASE_MODEL}}"
 
 # ============== RL 模型自动查找 ==============
@@ -46,13 +58,35 @@ find_latest_checkpoint() {
     echo "$latest_ckpt"
 }
 
-# QueryGen RL 模型（自动查找最新 checkpoint）
-QUERYGEN_RL_DIR="${PROJECT_ROOT}/output/agent_rl_querygen_3b_v3"
-QUERYGEN_MODEL="${QUERYGEN_MODEL:-$(find_latest_checkpoint "$QUERYGEN_RL_DIR")}"
+# QueryGen RL 模型（优先合并后的 7B，其次 3B full）
+# 注意：LoRA checkpoint 无法直接被 vLLM 加载，需要先合并
+# 运行 bash bash/agent/merge_agent_lora.sh 生成合并模型
+QUERYGEN_MERGED_7B="${PROJECT_ROOT}/output/agent_rl_querygen_7b_v1_lora/merge"
+QUERYGEN_RL_DIR_3B="${PROJECT_ROOT}/output/agent_rl_querygen_3b_v3"
+QUERYGEN_MODEL_3B=$(find_latest_checkpoint "$QUERYGEN_RL_DIR_3B")
+if [[ -d "$QUERYGEN_MERGED_7B" && -f "$QUERYGEN_MERGED_7B/config.json" ]]; then
+    QUERYGEN_MODEL="${QUERYGEN_MODEL:-$QUERYGEN_MERGED_7B}"
+elif [[ -n "$QUERYGEN_MODEL_3B" ]]; then
+    QUERYGEN_MODEL="${QUERYGEN_MODEL:-$QUERYGEN_MODEL_3B}"
+else
+    QUERYGEN_MODEL=""
+fi
 
-# LawSelect RL 模型（自动查找最新 checkpoint）
-LAWSELECT_RL_DIR="${PROJECT_ROOT}/output/agent_rl_lawselect_3b_v3"
-LAWSELECT_MODEL="${LAWSELECT_MODEL:-$(find_latest_checkpoint "$LAWSELECT_RL_DIR")}"
+# LawSelect RL 模型（优先合并后的 7B，其次 3B full）
+LAWSELECT_MERGED_7B="${PROJECT_ROOT}/output/agent_rl_lawselect_7b_v1_lora/merge"
+LAWSELECT_RL_DIR_3B_V4="${PROJECT_ROOT}/output/agent_rl_lawselect_3b_v4"
+LAWSELECT_RL_DIR_3B_V3="${PROJECT_ROOT}/output/agent_rl_lawselect_3b_v3"
+LAWSELECT_MODEL_3B_V4=$(find_latest_checkpoint "$LAWSELECT_RL_DIR_3B_V4")
+LAWSELECT_MODEL_3B_V3=$(find_latest_checkpoint "$LAWSELECT_RL_DIR_3B_V3")
+if [[ -d "$LAWSELECT_MERGED_7B" && -f "$LAWSELECT_MERGED_7B/config.json" ]]; then
+    LAWSELECT_MODEL="${LAWSELECT_MODEL:-$LAWSELECT_MERGED_7B}"
+elif [[ -n "$LAWSELECT_MODEL_3B_V4" ]]; then
+    LAWSELECT_MODEL="${LAWSELECT_MODEL:-$LAWSELECT_MODEL_3B_V4}"
+elif [[ -n "$LAWSELECT_MODEL_3B_V3" ]]; then
+    LAWSELECT_MODEL="${LAWSELECT_MODEL:-$LAWSELECT_MODEL_3B_V3}"
+else
+    LAWSELECT_MODEL=""
+fi
 
 # Dense Retriever 模型
 DENSE_MODEL="${DENSE_MODEL:-${PROJECT_ROOT}/output/law_retriever}"
@@ -65,12 +99,12 @@ LAW_CORPUS="${PROJECT_ROOT}/data/law_corpus.jsonl"
 TEST_DATA="${PROJECT_ROOT}/data/test.json"
 OUTPUT_DIR="${PROJECT_ROOT}/mrag/retriever_output"
 
-# 检索参数
-DENSE_TOP_K=50   # Dense 检索取 top-50
-RERANK_TOP_K=20  # Rerank 后取 top-20（增加给 LLM 更多候选）
+# 检索参数（与 MRAG 对齐：MRAG 输出 50 条法条）
+DENSE_TOP_K=100  # Dense 检索取 top-100（扩大候选池）
+RERANK_TOP_K=50  # Rerank 后取 top-50（与 MRAG 的 50 对齐）
 BATCH_SIZE=4
 TENSOR_PARALLEL_SIZE=1
-MIN_SELECTED=5   # LLM 最少选择的法条数
+MIN_SELECTED=20  # LLM 最少选择的法条数（与 MRAG 对齐）
 
 # ============== Step 0: 检查模型 ==============
 echo "==========================================="

@@ -222,25 +222,32 @@ def gen_lawselect_data(
         
         positive_set = set(positive_ids)
         
+        # 计算需要的负例数量，确保总候选数为 num_candidates
+        num_positives = len(positive_ids)
+        num_negatives_needed = max(0, num_candidates - num_positives)
+        
         # 负例：困难负例 + 随机负例
         negative_ids = []
         
         if use_hard_negatives and retriever is not None:
             # 使用检索获取困难负例
+            # 困难负例数量 = min(num_hard_negatives, num_negatives_needed)
+            actual_hard_neg_count = min(num_hard_negatives, num_negatives_needed)
+            
             hard_neg_candidates = retriever.retrieve(
                 fact, 
-                top_k=num_hard_negatives * 2,  # 多检索一些，后面筛选
+                top_k=actual_hard_neg_count * 2,  # 多检索一些，后面筛选
                 exclude=positive_set
             )
             
-            # 选择前 num_hard_negatives 个困难负例
-            hard_negatives = hard_neg_candidates[:num_hard_negatives]
+            # 选择前 actual_hard_neg_count 个困难负例
+            hard_negatives = hard_neg_candidates[:actual_hard_neg_count]
             negative_ids.extend(hard_negatives)
             hard_neg_stats.append(len(hard_negatives))
             
-            # 如果困难负例不够，用随机负例补充
-            if len(negative_ids) < num_hard_negatives:
-                remaining = num_hard_negatives - len(negative_ids)
+            # 如果负例不够 num_negatives_needed，用随机负例补充
+            if len(negative_ids) < num_negatives_needed:
+                remaining = num_negatives_needed - len(negative_ids)
                 random_pool = [lid for lid in all_law_ids 
                               if lid not in positive_set and lid not in set(negative_ids)]
                 if random_pool:
@@ -249,11 +256,12 @@ def gen_lawselect_data(
         else:
             # 使用随机负例
             negative_pool = [lid for lid in all_law_ids if lid not in positive_set]
-            num_neg = min(num_hard_negatives, len(negative_pool))
+            num_neg = min(num_negatives_needed, len(negative_pool))
             negative_ids = random.sample(negative_pool, num_neg)
         
         # 合并正例和负例，然后打乱顺序
-        candidate_ids = positive_ids + negative_ids
+        # 确保总数不超过 num_candidates
+        candidate_ids = positive_ids + negative_ids[:num_negatives_needed]
         random.shuffle(candidate_ids)
         
         # 构建候选法条文本（使用统一的格式化函数）

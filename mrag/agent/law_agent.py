@@ -17,6 +17,7 @@ import json
 import argparse
 import re
 import math
+import os
 from typing import List, Dict, Tuple, Optional, Any
 from dataclasses import dataclass, field
 
@@ -31,6 +32,12 @@ from transformers import (
     AutoModelForSequenceClassification,
 )
 import faiss
+
+# 在导入 vLLM 之前设置环境变量，强制使用 V1 引擎（避免 V0/V1 状态冲突）
+# 必须使用强制赋值，setdefault 可能被 shell 环境变量覆盖
+os.environ["VLLM_USE_V1"] = "1"
+# 禁用 FlashInfer 采样器，使用默认 PyTorch 采样（避免 JIT 编译问题）
+os.environ["VLLM_USE_FLASHINFER_SAMPLER"] = "0"
 
 try:
     from vllm import LLM, SamplingParams
@@ -188,11 +195,13 @@ class QueryGenerator:
                 self.tokenizer = AutoTokenizer.from_pretrained(
                     model_path, trust_remote_code=True, use_fast=False
                 )
+            # QueryGen: 保留轻微随机性以生成多样化查询，添加 seed 保证可复现
             self.sampling_params = SamplingParams(
                 temperature=0.1,
                 top_p=0.9,
                 max_tokens=256,
                 stop=["\n\n\n"],
+                seed=42,  # 可复现性
             )
         else:
             self.tokenizer = AutoTokenizer.from_pretrained(
@@ -265,12 +274,14 @@ class QueryGenerator:
                 results.append(QueryGenResult(queries=queries, raw_output=raw_text))
             return results
 
+        # 设置种子保证可复现（transformers 版本）
+        torch.manual_seed(42)
         for prompt in tqdm(prompts, desc="Generating queries"):
             inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
             with torch.no_grad():
                 output_ids = self.model.generate(
                     **inputs, max_new_tokens=256, temperature=0.1, do_sample=True,
-                )
+                )  # QueryGen 保留轻微随机性以生成多样化查询
             raw_text = self.tokenizer.decode(
                 output_ids[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True,
             )
@@ -505,7 +516,7 @@ class LawSelector:
                 model=model_path,
                 tensor_parallel_size=tensor_parallel_size,
                 trust_remote_code=True,
-                max_model_len=8192,
+                max_model_len=32768,  # 增大以支持 50 个候选法条（约 25000 tokens）
                 gpu_memory_utilization=gpu_memory_util,
             )
             try:
@@ -515,8 +526,11 @@ class LawSelector:
                     model_path, trust_remote_code=True, use_fast=False
                 )
 
+            # LawSelect: 使用 greedy decoding (temperature=0) 保证精确判断和可复现
             self.sampling_params = SamplingParams(
-                temperature=0.1, top_p=0.95, max_tokens=2048, stop=["\n\n\n"],
+                temperature=0,  # greedy decoding，完全确定性
+                max_tokens=2048, 
+                stop=["\n\n\n"],
             )
         else:
             self.tokenizer = AutoTokenizer.from_pretrained(
@@ -697,12 +711,12 @@ class LawSelector:
             list(zip(prompts, candidates_list)), desc="Selecting laws"
         ):
             inputs = self.tokenizer(
-                prompt, return_tensors="pt", truncation=True, max_length=7000
+                prompt, return_tensors="pt", truncation=True, max_length=28000  # 与训练对齐，支持 50 候选
             ).to(self.device)
             with torch.no_grad():
                 output_ids = self.model.generate(
-                    **inputs, max_new_tokens=2048, temperature=0.1, do_sample=True,
-                )
+                    **inputs, max_new_tokens=2048, do_sample=False,
+                )  # LawSelect 使用 greedy decoding，完全确定性
             raw_text = self.tokenizer.decode(
                 output_ids[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True,
             )
@@ -731,27 +745,40 @@ class LawRetrievalAgent:
         gpu_memory_util: float = 0.5,
         querygen_model_path: Optional[str] = None,
         lawselect_model_path: Optional[str] = None,
+        skip_querygen: bool = False,
+        skip_lawselect: bool = False,
     ):
         self.qg_model = querygen_model_path if querygen_model_path else llm_model_path
         self.ls_model = lawselect_model_path if lawselect_model_path else llm_model_path
         self.use_different_models = (self.qg_model != self.ls_model)
+        self.skip_querygen = skip_querygen
+        self.skip_lawselect = skip_lawselect
         
         self.device = device
         self.use_vllm = use_vllm
         self.tensor_parallel_size = tensor_parallel_size
         self.gpu_memory_util = gpu_memory_util
         
-        print(f"[Agent] QueryGen 模型: {self.qg_model}")
-        print(f"[Agent] LawSelect 模型: {self.ls_model}")
+        if skip_querygen:
+            print(f"[Agent] 跳过 QueryGen（消融实验）")
+        else:
+            print(f"[Agent] QueryGen 模型: {self.qg_model}")
+        if skip_lawselect:
+            print(f"[Agent] 跳过 LawSelect（消融实验）")
+        else:
+            print(f"[Agent] LawSelect 模型: {self.ls_model}")
         print(f"[Agent] 采用串行加载策略以节省 GPU 内存")
         
-        self.query_generator = QueryGenerator(
-            model_path=self.qg_model,
-            device=device,
-            use_vllm=use_vllm,
-            tensor_parallel_size=tensor_parallel_size,
-            gpu_memory_util=gpu_memory_util,
-        )
+        # 如果跳过 QueryGen，不加载 QueryGenerator
+        self.query_generator = None
+        if not skip_querygen:
+            self.query_generator = QueryGenerator(
+                model_path=self.qg_model,
+                device=device,
+                use_vllm=use_vllm,
+                tensor_parallel_size=tensor_parallel_size,
+                gpu_memory_util=gpu_memory_util,
+            )
 
         self.dense_retriever = DenseRetriever(
             law_corpus_path=law_corpus_path,
@@ -771,16 +798,28 @@ class LawRetrievalAgent:
         if self.law_selector is not None:
             return
         
-        print(f"\n[Agent] 释放 QueryGen 模型，准备加载 LawSelect 模型...")
+        print(f"\n[Agent] 释放其他模型，准备加载 LawSelect 模型...")
         
-        if hasattr(self.query_generator, 'llm') and self.query_generator.llm is not None:
-            print("[Agent] 释放 QueryGen vLLM 实例...")
-            del self.query_generator.llm
-            self.query_generator.llm = None
-        if hasattr(self.query_generator, 'model') and self.query_generator.model is not None:
-            print("[Agent] 释放 QueryGen HF 模型...")
-            del self.query_generator.model
-            self.query_generator.model = None
+        # 释放 QueryGen 模型（如果存在）
+        if self.query_generator is not None:
+            if hasattr(self.query_generator, 'llm') and self.query_generator.llm is not None:
+                print("[Agent] 释放 QueryGen vLLM 实例...")
+                del self.query_generator.llm
+                self.query_generator.llm = None
+            if hasattr(self.query_generator, 'model') and self.query_generator.model is not None:
+                print("[Agent] 释放 QueryGen HF 模型...")
+                del self.query_generator.model
+                self.query_generator.model = None
+        
+        # 释放 Reranker 模型
+        if hasattr(self, 'reranker') and self.reranker is not None:
+            if hasattr(self.reranker, 'model') and self.reranker.model is not None:
+                print("[Agent] 释放 Reranker 模型...")
+                del self.reranker.model
+                self.reranker.model = None
+            if hasattr(self.reranker, 'tokenizer'):
+                del self.reranker.tokenizer
+                self.reranker.tokenizer = None
         
         import gc
         gc.collect()
@@ -812,11 +851,19 @@ class LawRetrievalAgent:
         """执行完整 pipeline"""
         print("\n" + "=" * 60)
         print(f"[Agent] 开始处理 {len(facts)} 个样本")
+        if self.skip_querygen:
+            print("[Agent] 模式: 跳过 QueryGen（直接用 fact 检索）")
+        if self.skip_lawselect:
+            print("[Agent] 模式: 跳过 LawSelect（直接输出 Reranker 结果）")
         print("=" * 60 + "\n")
 
-        # Step 1: 生成检索查询
-        print("[Step 1/4] 生成检索查询 (QueryGen)...")
-        query_results = self.query_generator.generate(facts, batch_size=batch_size)
+        # Step 1: 生成检索查询（或跳过）
+        if self.skip_querygen:
+            print("[Step 1/4] 跳过 QueryGen，使用 fact 作为查询...")
+            query_results = [QueryGenResult(queries=[fact[:500]]) for fact in facts]
+        else:
+            print("[Step 1/4] 生成检索查询 (QueryGen)...")
+            query_results = self.query_generator.generate(facts, batch_size=batch_size)
 
         # Step 2: Dense 检索 top-50
         print(f"[Step 2/4] Dense 检索候选法条 (top-{dense_top_k})...")
@@ -835,14 +882,28 @@ class LawRetrievalAgent:
             reranked = self.reranker.rerank(fact, candidates, top_k=rerank_top_k)
             reranked_candidates_list.append(reranked)
 
-        # Step 4: LLM 筛选相关法条
-        print("[Step 4/4] 筛选相关法条 (LLM-Select)...")
-        
-        self._load_law_selector()
-        
-        selection_results = self.law_selector.select(
-            facts, reranked_candidates_list, batch_size=min(batch_size, 4)
-        )
+        # Step 4: LLM 筛选相关法条（或跳过）
+        if self.skip_lawselect:
+            print("[Step 4/4] 跳过 LawSelect，直接使用 Reranker 结果...")
+            # 将 Reranker 结果转换为 SelectionResult 格式
+            selection_results = []
+            for reranked in reranked_candidates_list:
+                selected = [
+                    SelectionResult(
+                        law_id=cand.law_id,
+                        law_name=cand.law_name,
+                        reason=f"Reranker 分数: {cand.score:.3f}",
+                        confidence=0.7 + 0.25 * (1 / (1 + math.exp(-cand.score))),
+                    )
+                    for cand in reranked
+                ]
+                selection_results.append((selected, []))  # (selected, rejected)
+        else:
+            print("[Step 4/4] 筛选相关法条 (LLM-Select)...")
+            self._load_law_selector()
+            selection_results = self.law_selector.select(
+                facts, reranked_candidates_list, batch_size=min(batch_size, 4)
+            )
 
         # 组装输出
         outputs: List[AgentOutput] = []
@@ -853,14 +914,15 @@ class LawRetrievalAgent:
             rejected_laws = selection_results[i][1]
             reranked_candidates = reranked_candidates_list[i]
 
-            # Fallback 策略
+            # Fallback 策略：不跳过被拒绝的法条
+            # 原因：LawSelect 可能错误地拒绝相关法条，Fallback 应该按 Reranker 分数补充
             if len(selected_laws) < min_selected and reranked_candidates:
                 fallback_count += 1
                 existing_ids = {s.law_id for s in selected_laws}
-                rejected_ids = {r.law_id for r in rejected_laws}
+                # 注意：不再跳过 rejected_ids，因为 LawSelect 的拒绝判断可能有误
                 
                 for cand in reranked_candidates:
-                    if cand.law_id not in existing_ids and cand.law_id not in rejected_ids:
+                    if cand.law_id not in existing_ids:  # 只检查是否已选，不检查是否被拒绝
                         conf = 0.6 + 0.25 * (1 / (1 + math.exp(-cand.score)))
                         conf = min(0.85, max(0.6, conf))
                         
@@ -924,6 +986,12 @@ def main() -> None:
 
     parser.add_argument("--querygen_model", type=str, default=None)
     parser.add_argument("--lawselect_model", type=str, default=None)
+    
+    # 消融实验选项
+    parser.add_argument("--skip_querygen", action="store_true", 
+                        help="跳过 QueryGen，直接用 fact 检索（消融实验）")
+    parser.add_argument("--skip_lawselect", action="store_true",
+                        help="跳过 LawSelect，直接输出 Reranker 结果（消融实验）")
 
     parser.add_argument("--gpu_memory_util", type=float, default=0.5)
     parser.add_argument("--dense_top_k", type=int, default=50)
@@ -968,6 +1036,8 @@ def main() -> None:
         gpu_memory_util=args.gpu_memory_util,
         querygen_model_path=args.querygen_model,
         lawselect_model_path=args.lawselect_model,
+        skip_querygen=args.skip_querygen,
+        skip_lawselect=args.skip_lawselect,
     )
 
     # 执行检索

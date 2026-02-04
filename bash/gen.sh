@@ -3,8 +3,8 @@ set -euo pipefail
 cd /data-share/chenxuanyi/internship/JuDGE_RL
 mkdir -p outputs
 
-export CUDA_VISIBLE_DEVICES=4,5
-TP_SIZE=2
+export CUDA_VISIBLE_DEVICES=1
+TP_SIZE=1
 
 # ===========================================
 # 配置参数
@@ -24,7 +24,7 @@ USE_MRAG=${USE_MRAG:-false}
 SCRIPT="train/deploy/inf.py"
 
 # Qwen3-4B RL模型路径
-RL_QWEN3_PATH=${RL_QWEN3_PATH:-"output/rl_qwen3-4b_grpo_full/v1-20260118-210344/checkpoint-501"}
+RL_QWEN3_PATH=${RL_QWEN3_PATH:-"output/rl_qwen3-4b_grpo_sft_full/v19-20260116-061030/checkpoint-501"}
 
 # Qwen2.5-3B RL模型路径
 RL_QWEN25_PATH=${RL_QWEN25_PATH:-"output/rl_qwen2.5-3b_grpo_sft_full/v17-20260117-091241/checkpoint-501"}
@@ -85,36 +85,36 @@ echo ">>> Starting Inference Tasks..."
 # 1. Qwen3-4B-Thinking (推理模型系列)
 # ========================================================
 
-# 1.1 Direct (基座) - 使用原始测试数据
-echo "[1/8] Running Qwen3 Direct..."
-python $SCRIPT \
-  --model_path "/data-share/chenxuanyi/LLM/Qwen3-4B-Thinking-2507" \
-  --dataset_path "data/test.json" \
-  --output_path "outputs/qwen3_direct${SUFFIX}_raw.json" \
-  --mode direct \
-  --tensor_parallel_size $TP_SIZE
+# # 1.1 Direct (基座) - 使用原始测试数据
+# echo "[1/8] Running Qwen3 Direct..."
+# python $SCRIPT \
+#   --model_path "/data-share/chenxuanyi/LLM/Qwen3-4B-Thinking-2507" \
+#   --dataset_path "data/test.json" \
+#   --output_path "outputs/qwen3_direct${SUFFIX}_raw.json" \
+#   --mode direct \
+#   --tensor_parallel_size $TP_SIZE
 
-# 1.2 ICL (Few-shot) - 使用原始测试数据
-echo "[2/8] Running Qwen3 ICL..."
-python $SCRIPT \
-  --model_path "/data-share/chenxuanyi/LLM/Qwen3-4B-Thinking-2507" \
-  --dataset_path "data/test.json" \
-  --output_path "outputs/qwen3_icl${SUFFIX}_raw.json" \
-  --mode icl \
-  --tensor_parallel_size $TP_SIZE
+# # 1.2 ICL (Few-shot) - 使用原始测试数据
+# echo "[2/8] Running Qwen3 ICL..."
+# python $SCRIPT \
+#   --model_path "/data-share/chenxuanyi/LLM/Qwen3-4B-Thinking-2507" \
+#   --dataset_path "data/test.json" \
+#   --output_path "outputs/qwen3_icl${SUFFIX}_raw.json" \
+#   --mode icl \
+#   --tensor_parallel_size $TP_SIZE
 
-# 1.3 SFT (LoRA Merge) - 使用预先格式化的测试集
-echo "[3/8] Running Qwen3 SFT..."
-if [ ! -d "${SFT_MODEL_QWEN3}" ]; then
-  echo "Warning: ${SFT_MODEL_QWEN3} not found, skipping..."
-else
-  python $SCRIPT \
-    --model_path "${SFT_MODEL_QWEN3}" \
-    --dataset_path "${DATASET}" \
-    --output_path "outputs/qwen3_sft${SUFFIX}_raw.json" \
-    --mode sft \
-    --tensor_parallel_size $TP_SIZE
-fi
+# # 1.3 SFT (LoRA Merge) - 使用预先格式化的测试集
+# echo "[3/8] Running Qwen3 SFT..."
+# if [ ! -d "${SFT_MODEL_QWEN3}" ]; then
+#   echo "Warning: ${SFT_MODEL_QWEN3} not found, skipping..."
+# else
+#   python $SCRIPT \
+#     --model_path "${SFT_MODEL_QWEN3}" \
+#     --dataset_path "${DATASET}" \
+#     --output_path "outputs/qwen3_sft${SUFFIX}_raw.json" \
+#     --mode sft \
+#     --tensor_parallel_size $TP_SIZE
+# fi
 
 # 1.4 RL (最新 checkpoint) - 使用预先格式化的测试集
 echo "[4/8] Running Qwen3 RL..."
@@ -134,36 +134,36 @@ fi
 # 2. Qwen2.5-3B-Instruct (普通模型系列)
 # ========================================================
 
-# 2.1 Direct (基座) - 使用原始测试数据
-echo "[5/8] Running Qwen2.5 Direct..."
-python $SCRIPT \
-  --model_path "/data-share/LLM/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1" \
-  --dataset_path "data/test.json" \
-  --output_path "outputs/qwen25_direct${SUFFIX}_raw.json" \
-  --mode direct \
-  --tensor_parallel_size $TP_SIZE
+# # 2.1 Direct (基座) - 使用原始测试数据
+# echo "[5/8] Running Qwen2.5 Direct..."
+# python $SCRIPT \
+#   --model_path "/data-share/LLM/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1" \
+#   --dataset_path "data/test.json" \
+#   --output_path "outputs/qwen25_direct${SUFFIX}_raw.json" \
+#   --mode direct \
+#   --tensor_parallel_size $TP_SIZE
 
-# 2.2 ICL (Few-shot) - 使用原始测试数据
-echo "[6/8] Running Qwen2.5 ICL..."
-python $SCRIPT \
-  --model_path "/data-share/LLM/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1" \
-  --dataset_path "data/test.json" \
-  --output_path "outputs/qwen25_icl${SUFFIX}_raw.json" \
-  --mode icl \
-  --tensor_parallel_size $TP_SIZE
+# # 2.2 ICL (Few-shot) - 使用原始测试数据
+# echo "[6/8] Running Qwen2.5 ICL..."
+# python $SCRIPT \
+#   --model_path "/data-share/LLM/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1" \
+#   --dataset_path "data/test.json" \
+#   --output_path "outputs/qwen25_icl${SUFFIX}_raw.json" \
+#   --mode icl \
+#   --tensor_parallel_size $TP_SIZE
 
-# 2.3 SFT (LoRA Merge) - 使用预先格式化的测试集
-echo "[7/8] Running Qwen2.5 SFT..."
-if [ ! -d "${SFT_MODEL_QWEN25}" ]; then
-  echo "Warning: ${SFT_MODEL_QWEN25} not found, skipping..."
-else
-  python $SCRIPT \
-    --model_path "${SFT_MODEL_QWEN25}" \
-    --dataset_path "${DATASET}" \
-    --output_path "outputs/qwen25_sft${SUFFIX}_raw.json" \
-    --mode sft \
-    --tensor_parallel_size $TP_SIZE
-fi
+# # 2.3 SFT (LoRA Merge) - 使用预先格式化的测试集
+# echo "[7/8] Running Qwen2.5 SFT..."
+# if [ ! -d "${SFT_MODEL_QWEN25}" ]; then
+#   echo "Warning: ${SFT_MODEL_QWEN25} not found, skipping..."
+# else
+#   python $SCRIPT \
+#     --model_path "${SFT_MODEL_QWEN25}" \
+#     --dataset_path "${DATASET}" \
+#     --output_path "outputs/qwen25_sft${SUFFIX}_raw.json" \
+#     --mode sft \
+#     --tensor_parallel_size $TP_SIZE
+# fi
 
 # 2.4 RL (最新 checkpoint) - 使用预先格式化的测试集
 echo "[8/8] Running Qwen2.5 RL..."

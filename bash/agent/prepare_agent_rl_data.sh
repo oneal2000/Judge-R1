@@ -5,6 +5,12 @@
 # 生成两个任务的训练数据：
 # 1. QueryGen: 根据案件事实生成检索查询
 # 2. LawSelect: 从候选法条中筛选相关法条
+#
+# 参数说明（v7: 只需 top-10，节省显存）：
+#   - num_candidates=20: 总候选法条数（正例 ~5 + 困难负例 15）
+#   - num_hard_negatives=15: 困难负例数量
+#
+# v7 改动：下游任务只需 10 条法条，减少候选数量以节省显存
 # ===========================================
 
 set -e
@@ -38,7 +44,8 @@ if [[ ! -f "${LAW_CORPUS}" ]]; then
     exit 1
 fi
 
-# 生成数据（启用困难负例，提高 LawSelect 训练效果）
+# 生成数据（v7: 候选数量减少到 20，节省显存，目标输出 10 条）
+# 正例约 5 个 + 困难负例 15 个 = 20 候选
 python "${ROOT}/mrag/agent/gen_agent_rl_data.py" \
     --train_data "${TRAIN_DATA}" \
     --law_corpus "${LAW_CORPUS}" \
@@ -57,6 +64,3 @@ echo "生成的文件:"
 echo "  - ${OUTPUT_DIR}/query_gen_train.jsonl"
 echo "  - ${OUTPUT_DIR}/law_select_train.jsonl"
 echo ""
-echo "下一步:"
-echo "  1. 训练 QueryGen: bash bash/agent/train_agent_rl.sh query_gen"
-echo "  2. 训练 LawSelect: bash bash/agent/train_agent_rl.sh law_select"

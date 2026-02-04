@@ -96,12 +96,13 @@ def _safe_calc_amt(text: str) -> int:
 
 class LegalDocRewardImproved(ORM):
     """
-    改进版奖励函数
+    改进版奖励函数 v2
     
     主要改进：
     1. 移除冗余指标（只用F1，不用Recall+Precision+F1）
     2. 调整权重分配：法律准确性 60%，文本质量 30%，思考质量 10%
     3. 对非 thinking 模型不惩罚思考质量
+    4. v2: 法律指标内部加权（法条35% > 罪名30% > 刑期20% > 罚金15%）
     """
     
     def __init__(
@@ -110,12 +111,22 @@ class LegalDocRewardImproved(ORM):
         legal_weight: float = 0.60,      # 法律准确性权重
         text_weight: float = 0.30,       # 文本质量权重
         thinking_weight: float = 0.10,   # 思考质量权重
+        # v2: 法律指标内部权重（总和=1.0）
+        law_article_weight: float = 0.35,   # 法条引用最重要
+        crime_weight: float = 0.30,         # 罪名判定次之
+        time_weight: float = 0.20,          # 刑期
+        amount_weight: float = 0.15,        # 罚金（基础分较低，降低权重）
     ):
         self.bert_model_path = bert_model_path or "/data-share/chenxuanyi/LLM/bert-base-chinese"
         self.segmenter = DataSegmentXingshi(punctuation_replace=True)
         self.legal_weight = legal_weight
         self.text_weight = text_weight
         self.thinking_weight = thinking_weight
+        # 法律指标内部权重
+        self.law_article_weight = law_article_weight
+        self.crime_weight = crime_weight
+        self.time_weight = time_weight
+        self.amount_weight = amount_weight
     
     def _split_sections(self, text: str) -> tuple[str, str]:
         parsed = self.segmenter.parse(text)
@@ -221,32 +232,34 @@ class LegalDocRewardImproved(ORM):
         for idx, (gen, ref) in enumerate(zip(clean_completions, reference_document)):
             
             # ========== 1. 法律准确性指标 (权重 60%) ==========
-            legal_metrics = []
+            # v2: 使用加权而非平均（法条35% > 罪名30% > 刑期20% > 罚金15%）
             
             # 刑期准确率
             g_time = _safe_calc_time(gen)
             r_time = _safe_calc_time(ref)
             time_score = _percent_for_judge(r_time, g_time)
-            legal_metrics.append(time_score)
             
             # 罚金准确率
             g_amt = _safe_calc_amt(gen)
             r_amt = _safe_calc_amt(ref)
             amt_score = _percent_for_judge(r_amt, g_amt)
-            legal_metrics.append(amt_score)
             
             # 罪名 F1（只用 F1，不用 Recall/Precision）
             _, _, conv_f1 = _recall_prec_f1(get_crime(ref), get_crime(gen))
-            legal_metrics.append(conv_f1)
             
             # 法条 F1（只用 F1）
             _, _, ref_f1 = _recall_prec_f1(
                 get_penalcode_index_from_text(ref),
                 get_penalcode_index_from_text(gen),
             )
-            legal_metrics.append(ref_f1)
             
-            legal_score = float(np.mean(legal_metrics)) if legal_metrics else 0.0
+            # v2: 加权计算法律准确性
+            legal_score = (
+                self.law_article_weight * ref_f1 +      # 法条 35%
+                self.crime_weight * conv_f1 +           # 罪名 30%
+                self.time_weight * time_score +         # 刑期 20%
+                self.amount_weight * amt_score          # 罚金 15%
+            )
             
             # ========== 2. 文本质量指标 (权重 30%) ==========
             text_metrics = []

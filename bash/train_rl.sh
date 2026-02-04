@@ -3,11 +3,11 @@ set -euo pipefail
 
 ROOT="/data-share/chenxuanyi/internship/JuDGE_RL"
 # BASE_MODEL_DEFAULT="/data-share/chenxuanyi/LLM/Qwen3-4B-Thinking-2507"
-SFT_MODEL_DEFAULT="/data-share/chenxuanyi/internship/JuDGE_RL/output/sft_qwen3-4b_lora_mrag/merge"
-MODEL_TYPE="${MODEL_TYPE:-qwen3_thinking}"
-# BASE_MODEL_DEFAULT="/data-share/LLM/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1"
-# # SFT_MODEL_DEFAULT="/data-share/chenxuanyi/internship/JuDGE_RL/output/sft_qwen2.5-3b_lora/merge"
-# MODEL_TYPE="${MODEL_TYPE:-qwen2}"
+# SFT_MODEL_DEFAULT="/data-share/chenxuanyi/internship/JuDGE_RL/output/sft_qwen3-4b_lora_mrag/merge"
+# MODEL_TYPE="${MODEL_TYPE:-qwen3_thinking}"
+BASE_MODEL_DEFAULT="/data-share/LLM/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1"
+SFT_MODEL_DEFAULT="/data-share/chenxuanyi/internship/JuDGE_RL/output/sft_qwen2.5-3b_lora/merge"
+MODEL_TYPE="${MODEL_TYPE:-qwen2}"
 EXPERIMENT="${EXPERIMENT:-sft_full}"
 USE_MRAG=${USE_MRAG:-false}
 
@@ -23,7 +23,7 @@ else
 fi
 MAX_OUTPUT_LENGTH=4096
 
-MASTER_PORT=${MASTER_PORT:-27000}
+MASTER_PORT=${MASTER_PORT:-27001}
 VLLM_HOST=${VLLM_HOST:-127.0.0.1}
 VLLM_PORT=${VLLM_PORT:-20420}
 USE_VLLM=${USE_VLLM:-false}
@@ -38,8 +38,8 @@ case "${EXPERIMENT}" in
     # MODEL="${MODEL:-${BASE_MODEL_DEFAULT}}"
     TRAIN_TYPE="full"
     # OUT_DIR="${ROOT}/output/rl_qwen3-4b_grpo_full"
-    OUT_DIR="${ROOT}/output/rl_qwen3-4b_grpo_sft_full"
-    # OUT_DIR="${ROOT}/output/rl_qwen2.5-3b_grpo_sft_full"
+    # OUT_DIR="${ROOT}/output/rl_qwen3-4b_grpo_sft_full
+    OUT_DIR="${ROOT}/output/rl_qwen2.5-3b_grpo_sft_full"
     # OUT_DIR="${ROOT}/output/rl_qwen2.5-3b_grpo_full"
     LR_DEFAULT="5e-6"       
     ;;
@@ -59,7 +59,7 @@ esac
 
 LEARNING_RATE="${LEARNING_RATE:-${LR_DEFAULT}}"
 
-gpu_ids=${CUDA_VISIBLE_DEVICES:-0,1,2,3}
+gpu_ids=${CUDA_VISIBLE_DEVICES:-0,1,2,6}
 IFS=',' read -ra parts <<< "$gpu_ids"
 gpu_num=${#parts[@]}
 
@@ -88,7 +88,7 @@ COMMON_ARGS=(
   --dataset "${DATA_DIR}"
   --max_length ${MAX_INPUT_LENGTH}  
   --max_completion_length ${MAX_OUTPUT_LENGTH}
-  --num_train_epochs 1
+  --num_train_epochs 2
   --per_device_train_batch_size 1
   --gradient_accumulation_steps 16
   --learning_rate "${LEARNING_RATE}"

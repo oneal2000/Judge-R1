@@ -2,15 +2,34 @@
 set -euo pipefail
 cd /data-share/chenxuanyi/internship/JuDGE_RL
 
-# ============== 配置区 ==============
+# ============== 配置区（取消注释需要的配置）==============
+
+# ------ [1] SFT: Qwen3-4B-Thinking (MRAG) ------
 BASEMODEL="/data-share/chenxuanyi/LLM/Qwen3-4B-Thinking-2507"
 DIR="/data-share/chenxuanyi/internship/JuDGE_RL/output/sft_qwen3-4b_lora_mrag"
-# BASEMODEL="/data-share/LLM/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1"
-# DIR="/data-share/chenxuanyi/internship/JuDGE_RL/output/sft_qwen2.5-3b_lora"
-# LoRA 配置
 LORA_RANK=128
 LORA_ALPHA=256
-# 注意：这必须与 train.py 中的 target_modules 完全一致
+
+# ------ [2] SFT: Qwen2.5-3B-Instruct ------
+# BASEMODEL="/data-share/LLM/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1"
+# DIR="/data-share/chenxuanyi/internship/JuDGE_RL/output/sft_qwen2.5-3b_lora"
+# LORA_RANK=128
+# LORA_ALPHA=256
+
+# ------ [3] Agent RL: QueryGen 7B ------
+# BASEMODEL="/data-share/chenxuanyi/LLM/Qwen2.5-7B-Instruct"
+# DIR="/data-share/chenxuanyi/internship/JuDGE_RL/output/agent_rl_querygen_7b_v1_lora"
+# LORA_RANK=64
+# LORA_ALPHA=128
+
+# ------ [4] Agent RL: LawSelect 7B ------
+# BASEMODEL="/data-share/chenxuanyi/LLM/Qwen2.5-7B-Instruct"
+# DIR="/data-share/chenxuanyi/internship/JuDGE_RL/output/agent_rl_lawselect_7b_v1_lora"
+# LORA_RANK=64
+# LORA_ALPHA=128
+
+# LoRA Target Modules（通用，无需修改）
+# 注意：这必须与训练时的 target_modules 完全一致
 TARGET_MODULES="q_proj,k_proj,v_proj,o_proj"
 
 # =====================================

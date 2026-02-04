@@ -135,8 +135,10 @@ class HybridFusionAgent:
         querygen_model_path: Optional[str] = None,
         lawselect_model_path: Optional[str] = None,
         rrf_k: int = 60,  # RRF 参数
+        fusion_mode: str = "weighted_rrf",  # 融合模式: rrf, weighted_rrf, mrag_priority
     ):
         self.rrf_k = rrf_k
+        self.fusion_mode = fusion_mode
         self.device = device
         self.use_vllm = use_vllm
         self.tensor_parallel_size = tensor_parallel_size
@@ -148,7 +150,7 @@ class HybridFusionAgent:
         
         print(f"[HybridAgent] QueryGen 模型: {self.qg_model}")
         print(f"[HybridAgent] LawSelect 模型: {self.ls_model}")
-        print(f"[HybridAgent] RRF k={rrf_k}")
+        print(f"[HybridAgent] RRF k={rrf_k}, 融合模式={fusion_mode}")
         
         # QueryGenerator (for Agent path)
         self.query_generator = QueryGenerator(
@@ -226,9 +228,16 @@ class HybridFusionAgent:
         mrag_results: List[SearchResult],
         agent_results: List[SearchResult],
         top_k: int = 80,
+        fusion_mode: str = "weighted_rrf",  # 融合模式
     ) -> List[HybridSearchResult]:
         """
-        RRF (Reciprocal Rank Fusion) 融合两路检索结果
+        改进的融合策略
+        
+        支持四种融合模式:
+        1. "rrf": 标准 RRF（两路权重相等）
+        2. "weighted_rrf": 加权 RRF（MRAG 权重更高 + 双重命中加成）
+        3. "mrag_priority": MRAG 优先（按分数混合，MRAG 权重极高）
+        4. "mrag_first": MRAG 完全优先（保留 MRAG 完整排序，Agent 只追加补充）【推荐】
         
         来源信息仅用于统计，不传递给 LLM
         """
@@ -253,19 +262,75 @@ class HybridFusionAgent:
             if r.law_id not in law_info:
                 law_info[r.law_id] = r
         
-        # 计算 RRF 分数并标记来源
+        # ============ mrag_first 模式：完全保留 MRAG 排序，Agent 只追加 ============
+        if fusion_mode == "mrag_first":
+            fusion_results: List[HybridSearchResult] = []
+            mrag_law_ids = set()
+            
+            # Step 1: 完整保留 MRAG 结果（保持原始排序）
+            for rank, r in enumerate(mrag_results, 1):
+                if r.law_id in mrag_law_ids:
+                    continue
+                mrag_law_ids.add(r.law_id)
+                agent_rank = agent_ranks.get(r.law_id, -1)
+                source = SourceInfo.BOTH if agent_rank > 0 else SourceInfo.MRAG
+                
+                # 使用大基数保证 MRAG 结果在前
+                # MRAG 排名 1 → score = 1000, 排名 100 → score = 901
+                score = 1000.0 - rank + 1
+                
+                fusion_results.append(HybridSearchResult(
+                    law_id=r.law_id,
+                    law_name=r.law_name,
+                    law_text=r.law_text,
+                    score=r.score,
+                    source=source,
+                    mrag_rank=rank,
+                    agent_rank=agent_rank,
+                    fusion_score=score,
+                ))
+            
+            # Step 2: 追加 Agent 独有的法条（MRAG 没有检索到的）
+            agent_unique: List[HybridSearchResult] = []
+            for rank, r in enumerate(agent_results, 1):
+                if r.law_id in mrag_law_ids:
+                    continue  # 已在 MRAG 结果中
+                if r.law_id in [x.law_id for x in agent_unique]:
+                    continue  # 去重
+                
+                # Agent 独有的法条，分数基数更低，按 Agent 排名
+                # Agent 排名 1 → score = 100, 排名 100 → score = 1
+                score = 100.0 - rank + 1
+                
+                agent_unique.append(HybridSearchResult(
+                    law_id=r.law_id,
+                    law_name=r.law_name,
+                    law_text=r.law_text,
+                    score=r.score,
+                    source=SourceInfo.AGENT,
+                    mrag_rank=-1,
+                    agent_rank=rank,
+                    fusion_score=score,
+                ))
+            
+            # 按 Agent 排名排序后追加
+            agent_unique.sort(key=lambda x: x.agent_rank)
+            fusion_results.extend(agent_unique)
+            
+            return fusion_results[:top_k]
+        
+        # ============ 其他融合模式 ============
+        # MRAG 路线质量更稳定，给予更高权重
+        MRAG_WEIGHT = 2.0 if fusion_mode == "weighted_rrf" else 1.0
+        AGENT_WEIGHT = 0.3 if fusion_mode == "weighted_rrf" else 1.0
+        BOTH_BONUS = 0.03 if fusion_mode == "weighted_rrf" else 0.0
+        
+        # 计算融合分数并标记来源
         fusion_results: List[HybridSearchResult] = []
         
         for law_id in all_law_ids:
             mrag_rank = mrag_ranks.get(law_id, -1)
             agent_rank = agent_ranks.get(law_id, -1)
-            
-            # RRF 分数计算
-            score = 0.0
-            if mrag_rank > 0:
-                score += 1.0 / (self.rrf_k + mrag_rank)
-            if agent_rank > 0:
-                score += 1.0 / (self.rrf_k + agent_rank)
             
             # 确定来源（仅用于统计）
             if mrag_rank > 0 and agent_rank > 0:
@@ -274,6 +339,24 @@ class HybridFusionAgent:
                 source = SourceInfo.MRAG
             else:
                 source = SourceInfo.AGENT
+            
+            # ============ 融合分数计算 ============
+            if fusion_mode == "mrag_priority":
+                # MRAG 优先模式：MRAG 结果排在前面，Agent 只补充
+                if mrag_rank > 0:
+                    score = 1.0 / mrag_rank + (0.01 if agent_rank > 0 else 0)
+                else:
+                    score = 0.01 / (self.rrf_k + agent_rank)
+            else:
+                # RRF 或加权 RRF 模式
+                score = 0.0
+                if mrag_rank > 0:
+                    score += MRAG_WEIGHT * 1.0 / (self.rrf_k + mrag_rank)
+                if agent_rank > 0:
+                    score += AGENT_WEIGHT * 1.0 / (self.rrf_k + agent_rank)
+                
+                if source == SourceInfo.BOTH:
+                    score += BOTH_BONUS
             
             orig_score = law_info[law_id].score
             
@@ -288,7 +371,7 @@ class HybridFusionAgent:
                 fusion_score=score,
             ))
         
-        # 按 RRF 分数排序
+        # 按融合分数排序
         fusion_results.sort(key=lambda x: x.fusion_score, reverse=True)
         
         return fusion_results[:top_k]
@@ -336,8 +419,14 @@ class HybridFusionAgent:
         rerank_top_k: int = 25,
         batch_size: int = 8,
         min_selected: int = 5,
+        skip_llm_select: bool = False,  # 跳过 LLM Select，直接用 Reranker 结果
     ) -> List[HybridAgentOutput]:
-        """执行 Hybrid Fusion Pipeline"""
+        """执行 Hybrid Fusion Pipeline
+        
+        Args:
+            skip_llm_select: 如果为 True，跳过 LLM Select 阶段，直接输出 Reranker top-K
+                            这可以避免 LLM 过滤导致的信息损失
+        """
         print("\n" + "=" * 60)
         print(f"[HybridAgent] 开始处理 {len(facts)} 个样本")
         print("=" * 60 + "\n")
@@ -365,8 +454,12 @@ class HybridFusionAgent:
             queries = qr.queries if qr.queries else [fact[:500]]
             agent_cands = self._agent_dense_search(queries, top_k=dense_top_k)
             
-            # RRF 融合
-            merged = self._rrf_fusion(mrag_cands, agent_cands, top_k=fusion_top_k)
+            # 融合（使用配置的融合模式）
+            merged = self._rrf_fusion(
+                mrag_cands, agent_cands, 
+                top_k=fusion_top_k, 
+                fusion_mode=self.fusion_mode
+            )
             
             # 统计
             both_count = sum(1 for c in merged if c.source == SourceInfo.BOTH)
@@ -395,72 +488,107 @@ class HybridFusionAgent:
             reranked = self._rerank_hybrid(fact, merged, top_k=rerank_top_k)
             all_reranked.append(reranked)
         
-        # Step 5: LLM Select（使用统一的 LawSelector）
-        print("[Step 5/5] 筛选相关法条 (LLM-Select)...")
-        self._load_law_selector()
-        
-        # 转换为 SearchResult 列表供 LawSelector 使用
-        search_results_list = [
-            [c.to_search_result() for c in candidates]
-            for candidates in all_reranked
-        ]
-        
-        selection_results = self.law_selector.select(
-            facts, search_results_list, batch_size=min(batch_size, 4)
-        )
-        
-        # 组装输出
+        # Step 5: LLM Select 或直接输出 Reranker 结果
         outputs: List[HybridAgentOutput] = []
-        fallback_count = 0
         
-        for i, qid in enumerate(query_ids):
-            selected_laws = selection_results[i][0]
-            rejected_laws = selection_results[i][1]
-            reranked_cands = all_reranked[i]
+        if skip_llm_select:
+            # 跳过 LLM Select，直接使用 Reranker 结果
+            print("[Step 5/5] 跳过 LLM-Select，直接使用 Reranker 结果...")
             
-            # Fallback 策略
-            if len(selected_laws) < min_selected and reranked_cands:
-                fallback_count += 1
-                existing_ids = {s.law_id for s in selected_laws}
-                rejected_ids = {r.law_id for r in rejected_laws}
+            for i, qid in enumerate(query_ids):
+                reranked_cands = all_reranked[i]
                 
-                # 优先添加双重命中的法条
-                sorted_cands = sorted(
-                    reranked_cands, 
-                    key=lambda c: (c.source == SourceInfo.BOTH, c.score), 
-                    reverse=True
-                )
+                # 将 Reranker 结果转换为 SelectionResult
+                selected_laws = []
+                for cand in reranked_cands:
+                    # 根据来源和分数计算置信度
+                    conf = 0.7 if cand.source == SourceInfo.BOTH else 0.6
+                    conf += 0.2 * (1 / (1 + math.exp(-cand.score)))
+                    conf = min(0.95, max(0.5, conf))
+                    
+                    selected_laws.append(SelectionResult(
+                        law_id=cand.law_id,
+                        law_name=cand.law_name,
+                        reason=f"Reranker 分数: {cand.score:.3f}",
+                        confidence=conf,
+                    ))
                 
-                for cand in sorted_cands:
-                    if cand.law_id not in existing_ids and cand.law_id not in rejected_ids:
-                        conf = 0.7 if cand.source == SourceInfo.BOTH else 0.6
-                        conf += 0.15 * (1 / (1 + math.exp(-cand.score)))
-                        conf = min(0.85, max(0.6, conf))
-                        
-                        selected_laws.append(SelectionResult(
-                            law_id=cand.law_id,
-                            law_name=cand.law_name,
-                            reason=f"由 Reranker 推荐（分数: {cand.score:.3f}）",
-                            confidence=conf,
-                        ))
-                        existing_ids.add(cand.law_id)
-                    if len(selected_laws) >= min_selected:
-                        break
+                outputs.append(HybridAgentOutput(
+                    query_id=qid,
+                    fact=facts[i],
+                    generated_queries=query_results[i].queries,
+                    mrag_count=stats_mrag[i] + stats_both[i],
+                    agent_count=stats_agent[i] + stats_both[i],
+                    both_count=stats_both[i],
+                    reranked_candidates=reranked_cands,
+                    selected_laws=selected_laws,
+                    rejected_laws=[],  # 跳过 LLM Select 时没有 rejected
+                ))
+        else:
+            # 使用 LLM Select
+            print("[Step 5/5] 筛选相关法条 (LLM-Select)...")
+            self._load_law_selector()
             
-            outputs.append(HybridAgentOutput(
-                query_id=qid,
-                fact=facts[i],
-                generated_queries=query_results[i].queries,
-                mrag_count=stats_mrag[i] + stats_both[i],
-                agent_count=stats_agent[i] + stats_both[i],
-                both_count=stats_both[i],
-                reranked_candidates=reranked_cands,
-                selected_laws=selected_laws,
-                rejected_laws=rejected_laws,
-            ))
-        
-        if fallback_count > 0:
-            print(f"[HybridAgent] Fallback 触发: {fallback_count}/{len(facts)} 个样本")
+            # 转换为 SearchResult 列表供 LawSelector 使用
+            search_results_list = [
+                [c.to_search_result() for c in candidates]
+                for candidates in all_reranked
+            ]
+            
+            selection_results = self.law_selector.select(
+                facts, search_results_list, batch_size=min(batch_size, 4)
+            )
+            
+            fallback_count = 0
+            
+            for i, qid in enumerate(query_ids):
+                selected_laws = selection_results[i][0]
+                rejected_laws = selection_results[i][1]
+                reranked_cands = all_reranked[i]
+                
+                # Fallback 策略
+                if len(selected_laws) < min_selected and reranked_cands:
+                    fallback_count += 1
+                    existing_ids = {s.law_id for s in selected_laws}
+                    rejected_ids = {r.law_id for r in rejected_laws}
+                    
+                    # 优先添加双重命中的法条
+                    sorted_cands = sorted(
+                        reranked_cands, 
+                        key=lambda c: (c.source == SourceInfo.BOTH, c.score), 
+                        reverse=True
+                    )
+                    
+                    for cand in sorted_cands:
+                        if cand.law_id not in existing_ids and cand.law_id not in rejected_ids:
+                            conf = 0.7 if cand.source == SourceInfo.BOTH else 0.6
+                            conf += 0.15 * (1 / (1 + math.exp(-cand.score)))
+                            conf = min(0.85, max(0.6, conf))
+                            
+                            selected_laws.append(SelectionResult(
+                                law_id=cand.law_id,
+                                law_name=cand.law_name,
+                                reason=f"由 Reranker 推荐（分数: {cand.score:.3f}）",
+                                confidence=conf,
+                            ))
+                            existing_ids.add(cand.law_id)
+                        if len(selected_laws) >= min_selected:
+                            break
+                
+                outputs.append(HybridAgentOutput(
+                    query_id=qid,
+                    fact=facts[i],
+                    generated_queries=query_results[i].queries,
+                    mrag_count=stats_mrag[i] + stats_both[i],
+                    agent_count=stats_agent[i] + stats_both[i],
+                    both_count=stats_both[i],
+                    reranked_candidates=reranked_cands,
+                    selected_laws=selected_laws,
+                    rejected_laws=rejected_laws,
+                ))
+            
+            if fallback_count > 0:
+                print(f"[HybridAgent] Fallback 触发: {fallback_count}/{len(facts)} 个样本")
         
         print("\n[HybridAgent] 处理完成！")
         return outputs
@@ -504,6 +632,9 @@ def main() -> None:
     parser.add_argument("--rerank_top_k", type=int, default=25)
     parser.add_argument("--min_selected", type=int, default=5)
     parser.add_argument("--rrf_k", type=int, default=60)
+    parser.add_argument("--fusion_mode", type=str, default="mrag_first",
+                        choices=["rrf", "weighted_rrf", "mrag_priority", "mrag_first"],
+                        help="融合模式: rrf(标准), weighted_rrf(加权), mrag_priority(MRAG优先), mrag_first(MRAG完全优先+Agent补充)【推荐】")
     parser.add_argument("--batch_size", type=int, default=8)
     
     # 其他参数
@@ -512,6 +643,8 @@ def main() -> None:
     parser.add_argument("--tensor_parallel_size", type=int, default=1)
     parser.add_argument("--gpu_memory_util", type=float, default=0.5)
     parser.add_argument("--save_details", action="store_true")
+    parser.add_argument("--skip_llm_select", action="store_true",
+                        help="跳过 LLM Select，直接输出 Reranker 结果（可提高 Recall）")
     
     args = parser.parse_args()
     
@@ -531,6 +664,7 @@ def main() -> None:
     print(f"[Main] 加载了 {len(data_items)} 个样本")
     
     # 初始化 Agent
+    print(f"[Main] 融合模式: {args.fusion_mode}")
     agent = HybridFusionAgent(
         llm_model_path=args.llm_model,
         law_corpus_path=args.law_corpus,
@@ -543,6 +677,7 @@ def main() -> None:
         querygen_model_path=args.querygen_model,
         lawselect_model_path=args.lawselect_model,
         rrf_k=args.rrf_k,
+        fusion_mode=args.fusion_mode,
     )
     
     # 执行检索
@@ -557,6 +692,7 @@ def main() -> None:
         rerank_top_k=args.rerank_top_k,
         min_selected=args.min_selected,
         batch_size=args.batch_size,
+        skip_llm_select=args.skip_llm_select,
     )
     
     # 转换并保存结果

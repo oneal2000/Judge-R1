@@ -40,6 +40,7 @@ def parse_arguments():
     parser.add_argument("--mode", type=str, required=True, choices=["direct", "icl", "sft", "rl"], 
                         help="Inference mode to select correct prompt and params")
     parser.add_argument("--tensor_parallel_size", type=int, default=1, help="Number of GPUs")
+    parser.add_argument("--gpu_memory_utilization", type=float, default=0.50, help="GPU memory utilization")
     
     # 数据格式选项
     parser.add_argument("--use_formatted_data", action="store_true", default=True,
@@ -48,18 +49,35 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def strip_think(text: str) -> str:
-    """去除 thinking 模型的思考过程"""
-    marker = "</think>"
-    if marker in text:
-        return text.split(marker, 1)[1].strip()
+def strip_think(text: str, model_path: str = "") -> str:
+    """去除 thinking 模型的思考过程
+    
+    支持多种格式:
+    - Qwen3-Thinking: </think> 标记
+    - LegalOne: [最终回答] 标记
+    """
+    # Qwen3-Thinking 格式
+    if "</think>" in text:
+        return text.split("</think>", 1)[1].strip()
+    
+    # LegalOne 格式 - 多种可能的标记
+    legalone_markers = ["[最终回答]", "【最终回答】", "[Final Answer]", "最终回答：", "最终回答:"]
+    for marker in legalone_markers:
+        if marker in text:
+            return text.split(marker, 1)[1].strip()
+    
     return text.strip()
 
 
 def is_thinking_model(model_path: str) -> bool:
-    """判断是否为 Thinking 模型"""
+    """判断是否为 Thinking 模型（Qwen3-Thinking）"""
     model_path_lower = model_path.lower()
-    return "qwen3" in model_path_lower or "thinking" in model_path_lower
+    return ("qwen3" in model_path_lower or "thinking" in model_path_lower) and "legalone" not in model_path_lower
+
+
+def is_legalone_model(model_path: str) -> bool:
+    """判断是否为 LegalOne 模型"""
+    return "legalone" in model_path.lower()
 
 
 # ================= Prompt 构建函数（与训练数据完全一致）=================
@@ -214,15 +232,27 @@ def main():
         print(f"[INFO] 标准模式: max_model_len={max_model_len}")
 
     # 初始化 vLLM
-    print(f"[INFO] Initializing vLLM with TP={args.tensor_parallel_size}...")
+    gpu_mem_util = getattr(args, 'gpu_memory_utilization', 0.50)
+    print(f"[INFO] Initializing vLLM with TP={args.tensor_parallel_size}, gpu_mem_util={gpu_mem_util}...")
     llm = LLM(
         model=args.model_path,
         tensor_parallel_size=args.tensor_parallel_size,
         trust_remote_code=True,
-        gpu_memory_utilization=0.50,
+        gpu_memory_utilization=gpu_mem_util,
         max_model_len=max_model_len,
     )
     tokenizer = llm.get_tokenizer()
+    
+    # 如果 tokenizer 没有 chat_template，尝试从 jinja 文件加载
+    if tokenizer.chat_template is None:
+        jinja_path = Path(args.model_path) / "chat_template.jinja"
+        if jinja_path.exists():
+            print(f"[INFO] Loading chat_template from {jinja_path}")
+            tokenizer.chat_template = jinja_path.read_text()
+        else:
+            # 使用默认的 Qwen3 chat template
+            print(f"[WARN] No chat_template found, using default Qwen3 template")
+            tokenizer.chat_template = """{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n' }}{% endif %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"""
 
     # 构建 Prompts
     prompts = []
@@ -266,7 +296,7 @@ def main():
     test_result = []
     for i, output in enumerate(outputs):
         full_res = output.outputs[0].text
-        doc_res = strip_think(full_res)
+        doc_res = strip_think(full_res, args.model_path)
         
         entry = {
             "text_id": data_items[i]["text_id"],

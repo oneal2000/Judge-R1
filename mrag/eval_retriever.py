@@ -160,19 +160,19 @@ def main():
     max_retrieved = max(len(docs) for docs in results.values()) if results else 0
     print(f"每个查询最多检索到 {max_retrieved} 个结果")
     
-    if max_retrieved < 20:
-        print(f"\n⚠️  警告: 检索结果数量 ({max_retrieved}) 小于评测的最大 K 值 (20)")
-        print(f"   建议在检索时设置更大的 TOP_K 值（如 50 或 100）")
+    if max_retrieved < 10:
+        print(f"\n⚠️  警告: 检索结果数量 ({max_retrieved}) 小于评测的最大 K 值 (10)")
+        print(f"   建议在检索时设置更大的 TOP_K 值")
         print(f"   否则 Recall@{max_retrieved+1} 及以上的指标将不准确！\n")
     
     print("\n" + "=" * 50)
     print("检索性能评测结果")
     print("=" * 50)
     
-    # 计算各项指标
+    # 计算各项指标（只评估 @5 和 @10，下游任务只需 10 条法条）
     metrics = {}
     
-    for k in [5, 10, 20]:
+    for k in [5, 10]:
         recall = compute_recall_at_k(qrels, results, k)
         precision = compute_precision_at_k(qrels, results, k)
         
