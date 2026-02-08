@@ -3,180 +3,222 @@ set -euo pipefail
 cd /data-share/chenxuanyi/internship/JuDGE_RL
 mkdir -p outputs
 
-export CUDA_VISIBLE_DEVICES=1
-TP_SIZE=1
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1,2,3,4}"
+TP_SIZE="${TP_SIZE:-4}"
 
 # ===========================================
-# 配置参数
+# 参数化配置
 # ===========================================
-# USE_MRAG: 是否使用检索增强 (true/false)
+# 9 种推理模式 (每个模型都适用):
+#   direct      -> 基座模型直接推理
+#   icl         -> 基座模型 Few-shot 推理
+#   sft         -> SFT 模型推理（无MRAG）
+#   mrag        -> 基座模型 + MRAG数据推理
+#   rl          -> Base→RL 模型推理（无MRAG）
+#   sft_mrag    -> SFT+MRAG 模型推理
+#   sft_rl      -> SFT→RL 模型推理（无MRAG）
+#   mrag_rl     -> Base→RL+MRAG 模型推理
+#   sft_mrag_rl -> SFT+MRAG→RL 模型推理
 #
-# 使用方法:
-#   bash bash/gen.sh                      # 标准模式
-#   USE_MRAG=true bash bash/gen.sh        # MRAG 模式
+# 环境变量:
+#   MODEL_NAME - 运行哪些模型, 逗号分隔 (默认: qwen3,qwen2)
+#   MODES      - 运行哪些推理模式, 逗号分隔 (默认: all)
+#                all -> 以上全部 9 种
 #
-# 注意: 运行前请确保已生成对应的测试集数据
-#   bash bash/data_train.sh               # 生成标准模式测试集
-#   USE_MRAG=true bash bash/data_train.sh # 生成 MRAG 模式测试集
+# RL 模型路径（按需通过环境变量覆盖，默认指向 output 目录下的标准命名）:
+#   RL_BASE_QWEN3_PATH / RL_BASE_QWEN25_PATH       - Base→RL
+#   RL_SFT_QWEN3_PATH / RL_SFT_QWEN25_PATH         - SFT→RL
+#   RL_BASE_MRAG_QWEN3_PATH / RL_BASE_MRAG_QWEN25_PATH - Base→RL+MRAG
+#   RL_SFT_MRAG_QWEN3_PATH / RL_SFT_MRAG_QWEN25_PATH  - SFT+MRAG→RL
+#
+# 用法:
+#   bash bash/gen.sh                                              # 所有模型所有模式
+#   MODES=direct,icl bash bash/gen.sh                             # 只跑 direct 和 icl
+#   MODEL_NAME=qwen3 MODES=sft_rl,sft_mrag_rl bash bash/gen.sh   # Qwen3 的 SFT→RL 系列
+#   MODEL_NAME=qwen2 MODES=mrag,mrag_rl bash bash/gen.sh         # Qwen2.5 的 MRAG 系列
 # ===========================================
 
-USE_MRAG=${USE_MRAG:-false}
+MODEL_NAME="${MODEL_NAME:-qwen3,qwen2}"
+MODES="${MODES:-all}"
 SCRIPT="train/deploy/inf.py"
 
-# Qwen3-4B RL模型路径
-RL_QWEN3_PATH=${RL_QWEN3_PATH:-"output/rl_qwen3-4b_grpo_sft_full/v19-20260116-061030/checkpoint-501"}
+# 展开 "all" 关键字
+[[ "${MODEL_NAME}" == "all" ]] && MODEL_NAME="qwen3,qwen2"
+[[ "${MODES}" == "all" ]] && MODES="direct,icl,sft,mrag,rl,sft_mrag,sft_rl,mrag_rl,sft_mrag_rl"
 
-# Qwen2.5-3B RL模型路径
-RL_QWEN25_PATH=${RL_QWEN25_PATH:-"output/rl_qwen2.5-3b_grpo_sft_full/v17-20260117-091241/checkpoint-501"}
+# ========== 基座模型路径 ==========
+QWEN3_BASE="/data-share/chenxuanyi/LLM/Qwen3-4B-Thinking-2507"
+QWEN25_BASE="/data-share/LLM/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1"
 
-# 根据 MRAG 模式选择数据集和模型
-if [[ "${USE_MRAG}" == "true" ]]; then
-    # MRAG 模式：使用预先格式化的测试集
-    DATASET="data/test_sft_mrag.json"
-    SUFFIX="_mrag"
-    
-    SFT_MODEL_QWEN3="output/sft_qwen3-4b_lora_mrag/merge"
-    SFT_MODEL_QWEN25="output/sft_qwen2.5-3b_lora_mrag/merge"
-    
-    # 检查测试集是否存在
-    if [[ ! -f "${DATASET}" ]]; then
-        echo "❌ 错误: MRAG 测试集不存在: ${DATASET}"
-        echo "   请先运行: USE_MRAG=true bash bash/data_train.sh"
-        exit 1
+# ========== SFT 模型路径 ==========
+SFT_QWEN3="${SFT_QWEN3:-output/sft_qwen3-4b_lora/merge}"
+SFT_MRAG_QWEN3="${SFT_MRAG_QWEN3:-output/sft_qwen3-4b_lora_mrag/merge}"
+SFT_QWEN25="${SFT_QWEN25:-output/sft_qwen2.5-3b_lora/merge}"
+SFT_MRAG_QWEN25="${SFT_MRAG_QWEN25:-output/sft_qwen2.5-3b_lora_mrag/merge}"
+
+# # ========== RL 模型路径（默认指向 output 目录，按需通过环境变量覆盖）==========
+# # Base → RL（无MRAG）
+# RL_BASE_QWEN3_PATH="${RL_BASE_QWEN3_PATH:-output/rl_qwen3-4b_grpo_base_full}"
+# RL_BASE_QWEN25_PATH="${RL_BASE_QWEN25_PATH:-output/rl_qwen2.5-3b_grpo_base_full}"
+# # SFT → RL（无MRAG）
+# RL_SFT_QWEN3_PATH="${RL_SFT_QWEN3_PATH:-output/rl_qwen3-4b_grpo_sft_full}"
+# RL_SFT_QWEN25_PATH="${RL_SFT_QWEN25_PATH:-output/rl_qwen2.5-3b_grpo_sft_full}"
+# # Base → RL（有MRAG）
+# RL_BASE_MRAG_QWEN3_PATH="${RL_BASE_MRAG_QWEN3_PATH:-output/rl_qwen3-4b_grpo_base_mrag_full}"
+# RL_BASE_MRAG_QWEN25_PATH="${RL_BASE_MRAG_QWEN25_PATH:-output/rl_qwen2.5-3b_grpo_base_mrag_full}"
+# # SFT+MRAG → RL
+# RL_SFT_MRAG_QWEN3_PATH="${RL_SFT_MRAG_QWEN3_PATH:-output/rl_qwen3-4b_grpo_sft_mrag_full}"
+# RL_SFT_MRAG_QWEN25_PATH="${RL_SFT_MRAG_QWEN25_PATH:-output/rl_qwen2.5-3b_grpo_sft_mrag_full}"
+# ========== RL 模型路径（默认指向 output 目录，按需通过环境变量覆盖）==========
+# Base → RL（无MRAG）
+RL_BASE_QWEN3_PATH="${RL_BASE_QWEN3_PATH:-output/rl_qwen3-4b_grpo_full/v1-20260118-210344/checkpoint-501}"
+RL_BASE_QWEN25_PATH="${RL_BASE_QWEN25_PATH:-output/rl_qwen2.5-3b_grpo_full/v1-20260122-173008/checkpoint-501}"
+# SFT → RL（无MRAG）
+RL_SFT_QWEN3_PATH="${RL_SFT_QWEN3_PATH:-output/rl_qwen3-4b_grpo_sft_full/v19-20260116-061030/checkpoint-501}"
+RL_SFT_QWEN25_PATH="${RL_SFT_QWEN25_PATH:-output/rl_qwen2.5-3b_grpo_sft_full/v17-20260117-091241/checkpoint-501}"
+# Base → RL（有MRAG）
+RL_BASE_MRAG_QWEN3_PATH="${RL_BASE_MRAG_QWEN3_PATH:-output/rl_qwen3-4b_grpo_full/v1-20260118-210344/checkpoint-501}"
+RL_BASE_MRAG_QWEN25_PATH="${RL_BASE_MRAG_QWEN25_PATH:-output/rl_qwen2.5-3b_grpo_full/v1-20260122-173008/checkpoint-501}"
+# SFT+MRAG → RL
+RL_SFT_MRAG_QWEN3_PATH="${RL_SFT_MRAG_QWEN3_PATH:-output/rl_qwen3-4b_grpo_sft_full/v19-20260116-061030/checkpoint-501}"
+RL_SFT_MRAG_QWEN25_PATH="${RL_SFT_MRAG_QWEN25_PATH:-output/rl_qwen2.5-3b_grpo_sft_full/v17-20260117-091241/checkpoint-501}"
+# ========== 数据集路径 ==========
+DATASET_RAW="data/test.json"
+DATASET_SFT="data/test_sft.json"
+DATASET_MRAG="data/test_sft_mrag.json"
+
+echo "=========================================="
+echo "  推理配置"
+echo "  模型: ${MODEL_NAME}"
+echo "  模式: ${MODES}"
+echo "=========================================="
+
+# 通用推理函数
+run_inference() {
+    local model_path="$1"
+    local label="$2"
+    local inf_mode="$3"
+    local dataset="$4"
+    local output="$5"
+
+    if [ ! -d "${model_path}" ]; then
+        echo "⚠️  [SKIP] ${label}: 模型不存在 ${model_path}"
+        return 0
     fi
-    
-    echo "=========================================="
-    echo "  推理模式: MRAG 增强"
-    echo "  测试集: ${DATASET}"
-    echo "  输出后缀: ${SUFFIX}"
-    echo "=========================================="
-else
-    # 标准模式：使用预先格式化的测试集
-    DATASET="data/test_sft.json"
-    SUFFIX=""
-    
-    SFT_MODEL_QWEN3="output/sft_qwen3-4b_lora/merge"
-    SFT_MODEL_QWEN25="output/sft_qwen2.5-3b_lora/merge"
-    
-    # 检查测试集是否存在
-    if [[ ! -f "${DATASET}" ]]; then
-        echo "❌ 错误: 测试集不存在: ${DATASET}"
-        echo "   请先运行: bash bash/data_train.sh"
-        exit 1
+    if [ ! -f "${dataset}" ]; then
+        echo "⚠️  [SKIP] ${label}: 数据集不存在 ${dataset}"
+        return 0
     fi
-    
-    echo "=========================================="
-    echo "  推理模式: 标准（无检索增强）"
-    echo "  测试集: ${DATASET}"
-    echo "=========================================="
-fi
 
-echo ""
-echo ">>> 模型配置："
-echo "  Qwen3 RL:   ${RL_QWEN3_PATH}"
-echo "  Qwen2.5 RL: ${RL_QWEN25_PATH}"
-echo "  Qwen3 SFT:  ${SFT_MODEL_QWEN3}"
-echo "  Qwen2.5 SFT: ${SFT_MODEL_QWEN25}"
-echo ""
+    echo "--------------------------------------------"
+    echo "[RUN] ${label}"
+    echo "  Model:   ${model_path}"
+    echo "  Dataset: ${dataset}"
+    echo "  Mode:    ${inf_mode}"
+    echo "  Output:  ${output}"
+    python $SCRIPT \
+        --model_path "${model_path}" \
+        --dataset_path "${dataset}" \
+        --output_path "${output}" \
+        --mode "${inf_mode}" \
+        --tensor_parallel_size $TP_SIZE
+}
+
+# 根据 model_family 和 exp_mode 分发推理任务
+dispatch_inference() {
+    local model_family="$1"
+    local exp_mode="$2"
+    local prefix base sft sft_mrag rl_base rl_sft rl_base_mrag rl_sft_mrag
+
+    case "${model_family}" in
+        qwen3)
+            prefix="qwen3"
+            base="${QWEN3_BASE}"
+            sft="${SFT_QWEN3}"
+            sft_mrag="${SFT_MRAG_QWEN3}"
+            rl_base="${RL_BASE_QWEN3_PATH}"
+            rl_sft="${RL_SFT_QWEN3_PATH}"
+            rl_base_mrag="${RL_BASE_MRAG_QWEN3_PATH}"
+            rl_sft_mrag="${RL_SFT_MRAG_QWEN3_PATH}"
+            ;;
+        qwen2|qwen25|qwen2.5)
+            prefix="qwen25"
+            base="${QWEN25_BASE}"
+            sft="${SFT_QWEN25}"
+            sft_mrag="${SFT_MRAG_QWEN25}"
+            rl_base="${RL_BASE_QWEN25_PATH}"
+            rl_sft="${RL_SFT_QWEN25_PATH}"
+            rl_base_mrag="${RL_BASE_MRAG_QWEN25_PATH}"
+            rl_sft_mrag="${RL_SFT_MRAG_QWEN25_PATH}"
+            ;;
+        *)
+            echo "[WARN] 未知模型: ${model_family}，跳过"
+            return 0
+            ;;
+    esac
+
+    # ============================================================
+    # 9 种实验模式 → (模型路径, inf.py模式, 数据集, 输出文件)
+    # ============================================================
+    case "${exp_mode}" in
+        direct)
+            run_inference "${base}" "${prefix} direct" "direct" \
+                "${DATASET_RAW}" "outputs/${prefix}_direct_raw.json"
+            ;;
+        icl)
+            run_inference "${base}" "${prefix} icl" "icl" \
+                "${DATASET_RAW}" "outputs/${prefix}_icl_raw.json"
+            ;;
+        sft)
+            run_inference "${sft}" "${prefix} sft" "sft" \
+                "${DATASET_SFT}" "outputs/${prefix}_sft_raw.json"
+            ;;
+        mrag)
+            # 基座模型 + MRAG 数据（测试检索增强对基座模型的效果）
+            run_inference "${base}" "${prefix} mrag" "sft" \
+                "${DATASET_MRAG}" "outputs/${prefix}_mrag_raw.json"
+            ;;
+        rl)
+            # Base → RL（无SFT、无MRAG）
+            run_inference "${rl_base}" "${prefix} rl (base→RL)" "rl" \
+                "${DATASET_SFT}" "outputs/${prefix}_rl_raw.json"
+            ;;
+        sft_mrag)
+            run_inference "${sft_mrag}" "${prefix} sft_mrag" "sft" \
+                "${DATASET_MRAG}" "outputs/${prefix}_sft_mrag_raw.json"
+            ;;
+        sft_rl)
+            # SFT → RL（无MRAG）
+            run_inference "${rl_sft}" "${prefix} sft_rl (SFT→RL)" "rl" \
+                "${DATASET_SFT}" "outputs/${prefix}_sft_rl_raw.json"
+            ;;
+        mrag_rl)
+            # Base → RL + MRAG 数据
+            run_inference "${rl_base_mrag}" "${prefix} mrag_rl (base→RL+MRAG)" "rl" \
+                "${DATASET_MRAG}" "outputs/${prefix}_mrag_rl_raw.json"
+            ;;
+        sft_mrag_rl)
+            # SFT+MRAG → RL
+            run_inference "${rl_sft_mrag}" "${prefix} sft_mrag_rl (SFT+MRAG→RL)" "rl" \
+                "${DATASET_MRAG}" "outputs/${prefix}_sft_mrag_rl_raw.json"
+            ;;
+        *)
+            echo "[WARN] 未知模式: ${exp_mode}，跳过"
+            ;;
+    esac
+}
 
 echo ">>> Starting Inference Tasks..."
 
-# ========================================================
-# 1. Qwen3-4B-Thinking (推理模型系列)
-# ========================================================
+IFS=',' read -ra MODEL_LIST <<< "${MODEL_NAME}"
+IFS=',' read -ra MODE_LIST <<< "${MODES}"
 
-# # 1.1 Direct (基座) - 使用原始测试数据
-# echo "[1/8] Running Qwen3 Direct..."
-# python $SCRIPT \
-#   --model_path "/data-share/chenxuanyi/LLM/Qwen3-4B-Thinking-2507" \
-#   --dataset_path "data/test.json" \
-#   --output_path "outputs/qwen3_direct${SUFFIX}_raw.json" \
-#   --mode direct \
-#   --tensor_parallel_size $TP_SIZE
-
-# # 1.2 ICL (Few-shot) - 使用原始测试数据
-# echo "[2/8] Running Qwen3 ICL..."
-# python $SCRIPT \
-#   --model_path "/data-share/chenxuanyi/LLM/Qwen3-4B-Thinking-2507" \
-#   --dataset_path "data/test.json" \
-#   --output_path "outputs/qwen3_icl${SUFFIX}_raw.json" \
-#   --mode icl \
-#   --tensor_parallel_size $TP_SIZE
-
-# # 1.3 SFT (LoRA Merge) - 使用预先格式化的测试集
-# echo "[3/8] Running Qwen3 SFT..."
-# if [ ! -d "${SFT_MODEL_QWEN3}" ]; then
-#   echo "Warning: ${SFT_MODEL_QWEN3} not found, skipping..."
-# else
-#   python $SCRIPT \
-#     --model_path "${SFT_MODEL_QWEN3}" \
-#     --dataset_path "${DATASET}" \
-#     --output_path "outputs/qwen3_sft${SUFFIX}_raw.json" \
-#     --mode sft \
-#     --tensor_parallel_size $TP_SIZE
-# fi
-
-# 1.4 RL (最新 checkpoint) - 使用预先格式化的测试集
-echo "[4/8] Running Qwen3 RL..."
-if [ ! -d "${RL_QWEN3_PATH}" ]; then
-  echo "Warning: ${RL_QWEN3_PATH} not found, skipping..."
-else
-  echo "Using model: ${RL_QWEN3_PATH}"
-  python $SCRIPT \
-    --model_path "${RL_QWEN3_PATH}" \
-    --dataset_path "${DATASET}" \
-    --output_path "outputs/qwen3_rl${SUFFIX}_raw.json" \
-    --mode rl \
-    --tensor_parallel_size $TP_SIZE
-fi
-
-# ========================================================
-# 2. Qwen2.5-3B-Instruct (普通模型系列)
-# ========================================================
-
-# # 2.1 Direct (基座) - 使用原始测试数据
-# echo "[5/8] Running Qwen2.5 Direct..."
-# python $SCRIPT \
-#   --model_path "/data-share/LLM/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1" \
-#   --dataset_path "data/test.json" \
-#   --output_path "outputs/qwen25_direct${SUFFIX}_raw.json" \
-#   --mode direct \
-#   --tensor_parallel_size $TP_SIZE
-
-# # 2.2 ICL (Few-shot) - 使用原始测试数据
-# echo "[6/8] Running Qwen2.5 ICL..."
-# python $SCRIPT \
-#   --model_path "/data-share/LLM/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1" \
-#   --dataset_path "data/test.json" \
-#   --output_path "outputs/qwen25_icl${SUFFIX}_raw.json" \
-#   --mode icl \
-#   --tensor_parallel_size $TP_SIZE
-
-# # 2.3 SFT (LoRA Merge) - 使用预先格式化的测试集
-# echo "[7/8] Running Qwen2.5 SFT..."
-# if [ ! -d "${SFT_MODEL_QWEN25}" ]; then
-#   echo "Warning: ${SFT_MODEL_QWEN25} not found, skipping..."
-# else
-#   python $SCRIPT \
-#     --model_path "${SFT_MODEL_QWEN25}" \
-#     --dataset_path "${DATASET}" \
-#     --output_path "outputs/qwen25_sft${SUFFIX}_raw.json" \
-#     --mode sft \
-#     --tensor_parallel_size $TP_SIZE
-# fi
-
-# 2.4 RL (最新 checkpoint) - 使用预先格式化的测试集
-echo "[8/8] Running Qwen2.5 RL..."
-if [ ! -d "${RL_QWEN25_PATH}" ]; then
-  echo "Warning: ${RL_QWEN25_PATH} not found, skipping..."
-else
-  echo "Using model: ${RL_QWEN25_PATH}"
-  python $SCRIPT \
-    --model_path "${RL_QWEN25_PATH}" \
-    --dataset_path "${DATASET}" \
-    --output_path "outputs/qwen25_rl${SUFFIX}_raw.json" \
-    --mode rl \
-    --tensor_parallel_size $TP_SIZE
-fi
+for model in "${MODEL_LIST[@]}"; do
+    model=$(echo "${model}" | xargs)
+    for mode in "${MODE_LIST[@]}"; do
+        mode=$(echo "${mode}" | xargs)
+        dispatch_inference "${model}" "${mode}"
+    done
+done
 
 echo "✅ All inference tasks completed!"

@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 # ===========================================
 # QueryGen RL 训练脚本
-# 硬件要求: 4 × A100 80GB
 # 用法: CUDA_VISIBLE_DEVICES=0,1,2,3 bash bash/agent/train_rl_querygen.sh
-# 
-# 参数与 v3-20260202-062324 一致，可复现该结果
 # ===========================================
 
 set -euo pipefail

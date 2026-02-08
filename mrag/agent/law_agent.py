@@ -182,11 +182,12 @@ class QueryGenerator:
         print(f"[QueryGenerator] Loading model from {model_path}...")
 
         if self.use_vllm:
+            # QueryGen 仅生成短文本(max_tokens=256)，2048 足够且省显存
             self.llm = LLM(
                 model=model_path,
                 tensor_parallel_size=tensor_parallel_size,
                 trust_remote_code=True,
-                max_model_len=4096,
+                max_model_len=2048,
                 gpu_memory_utilization=gpu_memory_util,
             )
             try:
@@ -326,13 +327,13 @@ class DenseRetriever:
         # 构建 FAISS 索引
         self.build_dense_index()
 
-    def encode_texts(self, texts: List[str], batch_size: int = 32) -> np.ndarray:
+    def encode_texts(self, texts: List[str], batch_size: int = 32, max_length: int = 256) -> np.ndarray:
         """编码文本为向量"""
         all_embeddings: List[np.ndarray] = []
         for i in range(0, len(texts), batch_size):
             batch = texts[i:i + batch_size]
             inputs = self.dense_tokenizer(
-                batch, padding=True, truncation=True, max_length=400, return_tensors="pt",
+                batch, padding=True, truncation=True, max_length=max_length, return_tensors="pt",
             ).to(self.device)
 
             with torch.no_grad():
@@ -346,17 +347,17 @@ class DenseRetriever:
         return embeddings
 
     def build_dense_index(self) -> None:
-        """构建 FAISS 索引"""
+        """构建 FAISS 索引（法条编码 max_length=256，与训练一致）"""
         print("[DenseRetriever] Building FAISS index...")
         texts = [f"{law['name']}：{law['text']}" for law in self.laws]
-        law_embeddings = self.encode_texts(texts)
+        law_embeddings = self.encode_texts(texts, max_length=256)
         dim = law_embeddings.shape[1]
         self.faiss_index = faiss.IndexFlatIP(dim)
         self.faiss_index.add(law_embeddings.astype(np.float32))
         print(f"[DenseRetriever] FAISS index built with {self.faiss_index.ntotal} vectors")
 
     def search(self, queries: List[str], top_k: int = 50) -> List[SearchResult]:
-        """Dense 检索，返回 top_k 候选"""
+        """Dense 检索，返回 top_k 候选（查询编码 max_length=512，与训练一致）"""
         n = len(self.laws)
         combined_scores = np.zeros(n, dtype=np.float32)
 
@@ -365,7 +366,7 @@ class DenseRetriever:
             if not query:
                 continue
 
-            query_embedding = self.encode_texts([query])
+            query_embedding = self.encode_texts([query], max_length=512)
             k = min(top_k * 2, n)  # 取更多再融合
             scores, indices = self.faiss_index.search(query_embedding.astype(np.float32), k)
 
@@ -553,8 +554,8 @@ class LawSelector:
             for i, c in enumerate(candidates)
         ])
 
-        # 使用统一的截断函数
-        fact_truncated = truncate_fact(fact)
+        # 使用统一的截断函数（max_length=1500 与训练对齐）
+        fact_truncated = truncate_fact(fact, max_length=1500)
         
         content = LAWSELECT_USER_TEMPLATE.format(
             fact=fact_truncated,
@@ -746,12 +747,14 @@ class LawRetrievalAgent:
         querygen_model_path: Optional[str] = None,
         lawselect_model_path: Optional[str] = None,
         skip_querygen: bool = False,
+        skip_reranker: bool = False,
         skip_lawselect: bool = False,
     ):
         self.qg_model = querygen_model_path if querygen_model_path else llm_model_path
         self.ls_model = lawselect_model_path if lawselect_model_path else llm_model_path
         self.use_different_models = (self.qg_model != self.ls_model)
         self.skip_querygen = skip_querygen
+        self.skip_reranker = skip_reranker
         self.skip_lawselect = skip_lawselect
         
         self.device = device
@@ -763,6 +766,8 @@ class LawRetrievalAgent:
             print(f"[Agent] 跳过 QueryGen（消融实验）")
         else:
             print(f"[Agent] QueryGen 模型: {self.qg_model}")
+        if skip_reranker:
+            print(f"[Agent] 跳过 Reranker（消融实验）")
         if skip_lawselect:
             print(f"[Agent] 跳过 LawSelect（消融实验）")
         else:
@@ -786,10 +791,12 @@ class LawRetrievalAgent:
             device=device,
         )
 
-        self.reranker = LawReranker(
-            model_path=reranker_model_path,
-            device=device,
-        )
+        self.reranker = None
+        if not skip_reranker:
+            self.reranker = LawReranker(
+                model_path=reranker_model_path,
+                device=device,
+            )
 
         self.law_selector = None
     
@@ -844,17 +851,19 @@ class LawRetrievalAgent:
         query_ids: List[str],
         facts: List[str],
         dense_top_k: int = 50,
-        rerank_top_k: int = 10,
+        rerank_top_k: int = 20,
         batch_size: int = 8,
-        min_selected: int = 3,
+        min_selected: int = 5,
     ) -> List[AgentOutput]:
         """执行完整 pipeline"""
         print("\n" + "=" * 60)
         print(f"[Agent] 开始处理 {len(facts)} 个样本")
         if self.skip_querygen:
             print("[Agent] 模式: 跳过 QueryGen（直接用 fact 检索）")
+        if self.skip_reranker:
+            print("[Agent] 模式: 跳过 Reranker（直接用 Dense 结果）")
         if self.skip_lawselect:
-            print("[Agent] 模式: 跳过 LawSelect（直接输出 Reranker 结果）")
+            print("[Agent] 模式: 跳过 LawSelect（直接输出上游结果）")
         print("=" * 60 + "\n")
 
         # Step 1: 生成检索查询（或跳过）
@@ -873,14 +882,18 @@ class LawRetrievalAgent:
             candidates = self.dense_retriever.search(queries, top_k=dense_top_k)
             dense_candidates_list.append(candidates)
 
-        # Step 3: Reranker 重排取 top-10
-        print(f"[Step 3/4] Reranker 重排 (top-{rerank_top_k})...")
-        reranked_candidates_list: List[List[SearchResult]] = []
-        for i, (fact, candidates) in enumerate(
-            tqdm(zip(facts, dense_candidates_list), desc="Reranking", total=len(facts))
-        ):
-            reranked = self.reranker.rerank(fact, candidates, top_k=rerank_top_k)
-            reranked_candidates_list.append(reranked)
+        # Step 3: Reranker 重排（或跳过）
+        if self.skip_reranker:
+            print(f"[Step 3/4] 跳过 Reranker，直接使用 Dense 结果...")
+            reranked_candidates_list = dense_candidates_list
+        else:
+            print(f"[Step 3/4] Reranker 重排 (top-{rerank_top_k})...")
+            reranked_candidates_list: List[List[SearchResult]] = []
+            for i, (fact, candidates) in enumerate(
+                tqdm(zip(facts, dense_candidates_list), desc="Reranking", total=len(facts))
+            ):
+                reranked = self.reranker.rerank(fact, candidates, top_k=rerank_top_k)
+                reranked_candidates_list.append(reranked)
 
         # Step 4: LLM 筛选相关法条（或跳过）
         if self.skip_lawselect:
@@ -990,13 +1003,15 @@ def main() -> None:
     # 消融实验选项
     parser.add_argument("--skip_querygen", action="store_true", 
                         help="跳过 QueryGen，直接用 fact 检索（消融实验）")
+    parser.add_argument("--skip_reranker", action="store_true",
+                        help="跳过 Reranker，直接用 Dense 结果（消融实验）")
     parser.add_argument("--skip_lawselect", action="store_true",
-                        help="跳过 LawSelect，直接输出 Reranker 结果（消融实验）")
+                        help="跳过 LawSelect，直接输出上游结果（消融实验）")
 
     parser.add_argument("--gpu_memory_util", type=float, default=0.5)
     parser.add_argument("--dense_top_k", type=int, default=50)
-    parser.add_argument("--rerank_top_k", type=int, default=10)
-    parser.add_argument("--min_selected", type=int, default=3)
+    parser.add_argument("--rerank_top_k", type=int, default=20)
+    parser.add_argument("--min_selected", type=int, default=5)  # Fallback 最小值
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--use_vllm", action="store_true")
@@ -1037,6 +1052,7 @@ def main() -> None:
         querygen_model_path=args.querygen_model,
         lawselect_model_path=args.lawselect_model,
         skip_querygen=args.skip_querygen,
+        skip_reranker=args.skip_reranker,
         skip_lawselect=args.skip_lawselect,
     )
 

@@ -35,7 +35,7 @@ from difflib import SequenceMatcher
 
 
 # ============ 配置常量 ============
-MAX_LAWS = 5          # 统一使用前5条法条
+MAX_LAWS = 10         # 统一使用前10条法条（与 Agent LawSelect 输出对齐）
 MAX_CASE_LENGTH = 2048  # 案例最大长度
 
 

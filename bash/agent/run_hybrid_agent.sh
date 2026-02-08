@@ -1,17 +1,20 @@
 #!/bin/bash
 # ===========================================
-# Hybrid Fusion Agent Pipeline
-# 
-# 融合 MRAG 和 Agent 两条检索路线：
-#   1. MRAG 路线: fact → Dense → top-K
-#   2. Agent 路线: fact → QueryGen(RL) → Dense → top-K
-#   3. RRF 融合两路结果
-#   4. Reranker 统一重排
-#   5. LLM Select (基座) / 直接输出
+# Hybrid 融合脚本（输出级融合）
+#
+# 融合已有的 Agent 和 MRAG 输出文件，无需重新加载模型。
+# 这是 run_law_agent_pipeline.sh FUSE_WITH_MRAG=true 的便捷入口。
 #
 # 用法:
-#   CUDA_VISIBLE_DEVICES=0 bash bash/agent/run_hybrid_agent.sh
-#   SKIP_LLM_SELECT=false bash bash/agent/run_hybrid_agent.sh  # 启用 LLM Select
+#   # 使用默认路径（自动查找最佳 Agent + MRAG 文件）
+#   bash bash/agent/run_hybrid_agent.sh
+#
+#   # 指定文件
+#   AGENT_FILE=path/to/agent.tsv MRAG_FILE=path/to/mrag.tsv \
+#     bash bash/agent/run_hybrid_agent.sh
+#
+#   # 尝试所有融合策略
+#   FUSION_STRATEGY=all bash bash/agent/run_hybrid_agent.sh
 # ===========================================
 
 set -e
@@ -19,108 +22,83 @@ set -e
 PROJECT_ROOT="/data-share/chenxuanyi/internship/JuDGE_RL"
 export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
 
-# ============== 配置 ==============
-CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
-export CUDA_VISIBLE_DEVICES
-GPU_MEMORY_UTIL=${GPU_MEMORY_UTIL:-0.40}
+OUTPUT_DIR="${PROJECT_ROOT}/mrag/retriever_output"
+QRELS_FILE="${PROJECT_ROOT}/mrag/retriever_data/qrels_test.tsv"
 
-# 基座模型 (用于 LawSelect)
-BASE_MODEL="/data-share/chenxuanyi/LLM/Qwen2.5-7B-Instruct"
+# 融合策略: agent_first / rrf / score_merge / all
+FUSION_STRATEGY=${FUSION_STRATEGY:-rrf}
+MAX_LAWS=${MAX_LAWS:-20}
 
-# QueryGen RL 模型 (合并后)
-QUERYGEN_RL_MERGED="${PROJECT_ROOT}/output/rl_querygen_7b_lora/merge"
-if [[ -d "$QUERYGEN_RL_MERGED" && -f "$QUERYGEN_RL_MERGED/config.json" ]]; then
-    QUERYGEN_MODEL="$QUERYGEN_RL_MERGED"
-    echo "✅ 使用 QueryGen RL: ${QUERYGEN_MODEL}"
-else
-    QUERYGEN_MODEL="$BASE_MODEL"
-    echo "⚠️ QueryGen RL 未找到，使用基座模型"
+# ============== 自动查找文件 ==============
+# Agent 文件（优先级：Both RL > LS RL > QG RL > Baseline）
+if [[ -z "${AGENT_FILE:-}" ]]; then
+    for f in \
+        "${OUTPUT_DIR}/ablation_both_rl.tsv" \
+        "${OUTPUT_DIR}/law_runfile_agent_both_rl_test.tsv" \
+        "${OUTPUT_DIR}/ablation_ls_rl.tsv" \
+        "${OUTPUT_DIR}/law_runfile_agent_ls_rl_test.tsv" \
+        "${OUTPUT_DIR}/ablation_baseline.tsv" \
+        "${OUTPUT_DIR}/law_runfile_agent_baseline_test.tsv"; do
+        if [[ -f "$f" ]]; then
+            AGENT_FILE="$f"
+            break
+        fi
+    done
 fi
 
-# LawSelect 固定使用基座模型
-LAWSELECT_MODEL="$BASE_MODEL"
+# MRAG 文件
+if [[ -z "${MRAG_FILE:-}" ]]; then
+    for f in \
+        "${OUTPUT_DIR}/ablation_mrag.tsv" \
+        "${OUTPUT_DIR}/law_runfile_reranked_test.tsv"; do
+        if [[ -f "$f" ]]; then
+            MRAG_FILE="$f"
+            break
+        fi
+    done
+fi
 
-# 检索模型
-DENSE_MODEL="${PROJECT_ROOT}/output/law_retriever"
-RERANKER_MODEL="${PROJECT_ROOT}/reranker/train"
+# 检查文件
+if [[ -z "${AGENT_FILE:-}" || ! -f "${AGENT_FILE}" ]]; then
+    echo "❌ 未找到 Agent 输出文件"
+    echo "   请先运行 Agent 管线: bash bash/agent/run_law_agent_pipeline.sh"
+    echo "   或指定 AGENT_FILE 环境变量"
+    exit 1
+fi
 
-# 数据路径
-LAW_CORPUS="${PROJECT_ROOT}/data/law_corpus.jsonl"
-TEST_DATA="${PROJECT_ROOT}/data/test.json"
-OUTPUT_DIR="${PROJECT_ROOT}/mrag/retriever_output"
-
-# 检索参数
-DENSE_TOP_K=${DENSE_TOP_K:-100}   # 每条路线检索数
-FUSION_TOP_K=${FUSION_TOP_K:-150} # RRF 融合后保留数
-RERANK_TOP_K=${RERANK_TOP_K:-50}  # Reranker 输出数
-MIN_SELECTED=${MIN_SELECTED:-20}  # LLM 最少选择数
-RRF_K=60
-BATCH_SIZE=4
-TENSOR_PARALLEL_SIZE=1
-
-# 融合模式
-# mrag_first: MRAG 优先（保留 MRAG 排序，Agent 补充）
-# weighted_rrf: 加权 RRF
-# rrf: 标准 RRF
-FUSION_MODE=${FUSION_MODE:-mrag_first}
-
-# 跳过 LLM Select（直接使用 Reranker 结果）
-SKIP_LLM_SELECT=${SKIP_LLM_SELECT:-true}
+if [[ -z "${MRAG_FILE:-}" || ! -f "${MRAG_FILE}" ]]; then
+    echo "❌ 未找到 MRAG 输出文件"
+    echo "   请先运行 eval_ablation.sh Phase 1 生成 MRAG 结果"
+    echo "   或指定 MRAG_FILE 环境变量"
+    exit 1
+fi
 
 echo "==========================================="
-echo "  Hybrid Fusion Agent"
+echo "  Hybrid 融合（输出级）"
 echo "==========================================="
-echo "  QueryGen: ${QUERYGEN_MODEL}"
-echo "  LawSelect: ${LAWSELECT_MODEL} (基座)"
-echo "  融合模式: ${FUSION_MODE}"
-echo "  跳过 LLM Select: ${SKIP_LLM_SELECT}"
+echo "  Agent 文件: ${AGENT_FILE}"
+echo "  MRAG  文件: ${MRAG_FILE}"
+echo "  融合策略:   ${FUSION_STRATEGY}"
+echo "  最大法条数: ${MAX_LAWS}"
 echo "==========================================="
 
-mkdir -p "${OUTPUT_DIR}"
+# 确定输出文件名
+if [[ "${FUSION_STRATEGY}" == "all" ]]; then
+    OUTPUT_FILE="${OUTPUT_DIR}/fused_hybrid.tsv"
+else
+    OUTPUT_FILE="${OUTPUT_DIR}/fused_hybrid_${FUSION_STRATEGY}.tsv"
+fi
 
-# 构建可选参数
-OPTIONAL_ARGS=""
-[[ "${SKIP_LLM_SELECT}" == "true" ]] && OPTIONAL_ARGS="${OPTIONAL_ARGS} --skip_llm_select"
-
-# 运行 Hybrid Agent
-python "${PROJECT_ROOT}/mrag/agent/hybrid_agent.py" \
-    --llm_model "${BASE_MODEL}" \
-    --law_corpus "${LAW_CORPUS}" \
-    --dense_model "${DENSE_MODEL}" \
-    --reranker_model "${RERANKER_MODEL}" \
-    --input_file "${TEST_DATA}" \
-    --output_file "${OUTPUT_DIR}/law_runfile_hybrid.tsv" \
-    --querygen_model "${QUERYGEN_MODEL}" \
-    --lawselect_model "${LAWSELECT_MODEL}" \
-    --dense_top_k ${DENSE_TOP_K} \
-    --fusion_top_k ${FUSION_TOP_K} \
-    --rerank_top_k ${RERANK_TOP_K} \
-    --min_selected ${MIN_SELECTED} \
-    --rrf_k ${RRF_K} \
-    --fusion_mode ${FUSION_MODE} \
-    --batch_size ${BATCH_SIZE} \
-    --device cuda \
-    --use_vllm \
-    --tensor_parallel_size ${TENSOR_PARALLEL_SIZE} \
-    --gpu_memory_util ${GPU_MEMORY_UTIL} \
-    --save_details \
-    ${OPTIONAL_ARGS}
-
-# 评估
-echo ""
-echo ">>> 评估检索效果..."
-python "${PROJECT_ROOT}/mrag/eval_retriever.py" \
-    --runfile "${OUTPUT_DIR}/law_runfile_hybrid.tsv" \
-    --qrels "${PROJECT_ROOT}/mrag/retriever_data/qrels_test.tsv" \
-    --output "${OUTPUT_DIR}/eval_hybrid.txt"
-
-echo ""
-echo ">>> Hybrid Agent 结果:"
-cat "${OUTPUT_DIR}/eval_hybrid.txt"
+python "${PROJECT_ROOT}/mrag/agent/fuse_results.py" \
+    --agent_file "${AGENT_FILE}" \
+    --mrag_file "${MRAG_FILE}" \
+    --output_file "${OUTPUT_FILE}" \
+    --strategy "${FUSION_STRATEGY}" \
+    --max_laws ${MAX_LAWS} \
+    --qrels "${QRELS_FILE}"
 
 echo ""
 echo "==========================================="
 echo "✅ 完成！"
-echo "  - 检索结果: ${OUTPUT_DIR}/law_runfile_hybrid.tsv"
-echo "  - 评估结果: ${OUTPUT_DIR}/eval_hybrid.txt"
+echo "  输出: ${OUTPUT_FILE}"
 echo "==========================================="

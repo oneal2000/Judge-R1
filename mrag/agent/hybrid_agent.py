@@ -233,11 +233,12 @@ class HybridFusionAgent:
         """
         改进的融合策略
         
-        支持四种融合模式:
+        支持五种融合模式:
         1. "rrf": 标准 RRF（两路权重相等）
         2. "weighted_rrf": 加权 RRF（MRAG 权重更高 + 双重命中加成）
         3. "mrag_priority": MRAG 优先（按分数混合，MRAG 权重极高）
-        4. "mrag_first": MRAG 完全优先（保留 MRAG 完整排序，Agent 只追加补充）【推荐】
+        4. "mrag_first": MRAG 完全优先（保留 MRAG 完整排序，Agent 只追加补充）
+        5. "agent_first": Agent 完全优先（保留 Agent 完整排序，MRAG 只追加补充）；当 Agent 优于 MRAG 时推荐
         
         来源信息仅用于统计，不传递给 LLM
         """
@@ -317,6 +318,52 @@ class HybridFusionAgent:
             agent_unique.sort(key=lambda x: x.agent_rank)
             fusion_results.extend(agent_unique)
             
+            return fusion_results[:top_k]
+        
+        # ============ agent_first 模式：完全保留 Agent 排序，MRAG 只追加（当 Agent > MRAG 时推荐）============
+        if fusion_mode == "agent_first":
+            fusion_results = []
+            agent_law_ids = set()
+            
+            # Step 1: 完整保留 Agent 结果（保持原始排序）
+            for rank, r in enumerate(agent_results, 1):
+                if r.law_id in agent_law_ids:
+                    continue
+                agent_law_ids.add(r.law_id)
+                mrag_rank = mrag_ranks.get(r.law_id, -1)
+                source = SourceInfo.BOTH if mrag_rank > 0 else SourceInfo.AGENT
+                score = 1000.0 - rank + 1
+                fusion_results.append(HybridSearchResult(
+                    law_id=r.law_id,
+                    law_name=r.law_name,
+                    law_text=r.law_text,
+                    score=r.score,
+                    source=source,
+                    mrag_rank=mrag_rank,
+                    agent_rank=rank,
+                    fusion_score=score,
+                ))
+            
+            # Step 2: 追加 MRAG 独有的法条
+            mrag_unique: List[HybridSearchResult] = []
+            for rank, r in enumerate(mrag_results, 1):
+                if r.law_id in agent_law_ids:
+                    continue
+                if r.law_id in [x.law_id for x in mrag_unique]:
+                    continue
+                score = 100.0 - rank + 1
+                mrag_unique.append(HybridSearchResult(
+                    law_id=r.law_id,
+                    law_name=r.law_name,
+                    law_text=r.law_text,
+                    score=r.score,
+                    source=SourceInfo.MRAG,
+                    mrag_rank=rank,
+                    agent_rank=-1,
+                    fusion_score=score,
+                ))
+            mrag_unique.sort(key=lambda x: x.mrag_rank)
+            fusion_results.extend(mrag_unique)
             return fusion_results[:top_k]
         
         # ============ 其他融合模式 ============
@@ -416,7 +463,7 @@ class HybridFusionAgent:
         facts: List[str],
         dense_top_k: int = 50,
         fusion_top_k: int = 80,
-        rerank_top_k: int = 25,
+        rerank_top_k: int = 20,
         batch_size: int = 8,
         min_selected: int = 5,
         skip_llm_select: bool = False,  # 跳过 LLM Select，直接用 Reranker 结果
@@ -629,12 +676,12 @@ def main() -> None:
     # 检索参数
     parser.add_argument("--dense_top_k", type=int, default=50)
     parser.add_argument("--fusion_top_k", type=int, default=80)
-    parser.add_argument("--rerank_top_k", type=int, default=25)
+    parser.add_argument("--rerank_top_k", type=int, default=20)
     parser.add_argument("--min_selected", type=int, default=5)
     parser.add_argument("--rrf_k", type=int, default=60)
-    parser.add_argument("--fusion_mode", type=str, default="mrag_first",
-                        choices=["rrf", "weighted_rrf", "mrag_priority", "mrag_first"],
-                        help="融合模式: rrf(标准), weighted_rrf(加权), mrag_priority(MRAG优先), mrag_first(MRAG完全优先+Agent补充)【推荐】")
+    parser.add_argument("--fusion_mode", type=str, default="rrf",
+                        choices=["rrf", "weighted_rrf", "mrag_priority", "mrag_first", "agent_first"],
+                        help="融合模式: rrf, weighted_rrf, mrag_priority, mrag_first(MRAG优先+Agent补充), agent_first(Agent优先+MRAG补充，Agent优于MRAG时推荐)")
     parser.add_argument("--batch_size", type=int, default=8)
     
     # 其他参数

@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -11,6 +12,10 @@ from swift.utils import get_logger
 logger = get_logger()
 
 ROOT = Path(__file__).resolve().parents[2]
+
+# ============== 环境变量配置（支持用户覆盖）==============
+# 优先级: 函数参数 > 环境变量 > 默认相对路径
+DEFAULT_BERT_MODEL_PATH = "/data-share/chenxuanyi/LLM/bert-base-chinese"
 EVAL_DIR = ROOT / "evaluation"
 if str(EVAL_DIR) not in sys.path:
     sys.path.insert(0, str(EVAL_DIR))
@@ -117,7 +122,12 @@ class LegalDocRewardImproved(ORM):
         time_weight: float = 0.20,          # 刑期
         amount_weight: float = 0.15,        # 罚金（基础分较低，降低权重）
     ):
-        self.bert_model_path = bert_model_path or "/data-share/chenxuanyi/LLM/bert-base-chinese"
+        # 优先级: 参数传入 > 环境变量 > 默认路径
+        self.bert_model_path = (
+            bert_model_path 
+            or os.environ.get("BERT_MODEL_PATH") 
+            or DEFAULT_BERT_MODEL_PATH
+        )
         self.segmenter = DataSegmentXingshi(punctuation_replace=True)
         self.legal_weight = legal_weight
         self.text_weight = text_weight

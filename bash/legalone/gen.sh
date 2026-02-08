@@ -3,7 +3,7 @@ set -euo pipefail
 cd /data-share/chenxuanyi/internship/JuDGE_RL
 mkdir -p outputs
 
-export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-1,3,5,6}
+export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-1,2,3,4}
 TP_SIZE=4
 
 # ============================================================

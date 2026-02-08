@@ -170,9 +170,15 @@ class SimpleRetriever:
         if SimpleRetriever._initialized:
             return
         
-        # 默认路径
-        self.dense_model_path = str(ROOT / "output" / "law_retriever")
-        self.law_corpus_path = str(ROOT / "data" / "law_corpus.jsonl")
+        # 路径配置（优先级: 环境变量 > 默认相对路径）
+        self.dense_model_path = os.environ.get(
+            "DENSE_MODEL_PATH", 
+            str(ROOT / "output" / "law_retriever")
+        )
+        self.law_corpus_path = os.environ.get(
+            "LAW_CORPUS_PATH",
+            str(ROOT / "data" / "law_corpus.jsonl")
+        )
         
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         
@@ -181,7 +187,9 @@ class SimpleRetriever:
         self._corpus_loaded = False
         
         SimpleRetriever._initialized = True
-        logger.info("[SimpleRetriever] Initialized (lazy loading)")
+        logger.info(f"[SimpleRetriever] Initialized (lazy loading)")
+        logger.info(f"[SimpleRetriever] Dense model path: {self.dense_model_path}")
+        logger.info(f"[SimpleRetriever] Law corpus path: {self.law_corpus_path}")
     
     def _load_corpus(self):
         """加载法条库"""
@@ -337,7 +345,7 @@ class QueryGenReward(ORM):
         format_weight: float = 0.05,       # 格式权重（最低）
         diversity_weight: float = 0.25,    # 多样性权重（v4: 0.20→0.25，鼓励多样查询覆盖更多法条）
         dense_weight: float = 0.70,        # Dense 检索效果权重（v4: 0.75→0.70）
-        min_queries: int = 3,
+        min_queries: int = 5,              # 与 prompts.py MIN_QUERIES 对齐
         max_queries: int = 8,
         dense_top_k: int = 50,             # Dense 检索 top-k
     ):
@@ -624,18 +632,18 @@ class LawSelectReward(ORM):
     
     def _compute_quantity_bonus(self, n_selected: int, n_gt: int) -> float:
         """
-        计算数量奖励（v7: 目标 8-10 条，不超过 10 条）
+        计算数量奖励（v8: 目标 5-10 条，与 SFT 数据 MAX_LAWS=10 对齐）
         
         设计思路：
-        - 下游任务只需要 10 条法条
-        - 鼓励选 8-10 条（覆盖 ground truth 且不过多）
-        - 超过 10 条给予惩罚（浪费下游资源）
+        - 下游任务使用 10 条法条（与 SFT/RL 数据配置一致）
+        - 鼓励选 5-10 条（覆盖 ground truth 且不过多）
+        - 超过 10 条给予惩罚
         
         评分规则：
-        - 8-10 条且覆盖 gt: 满分 1.0
-        - 5-7 条且覆盖 gt: 0.9
+        - 5-10 条且覆盖 gt: 满分 1.0
+        - 3-4 条: 0.85
         - 超过 10 条: 惩罚
-        - 少于 gt 数量: 按比例惩罚
+        - 少于 3 条: 按比例惩罚
         """
         if n_gt == 0:
             return 0.5  # 没有标签，给中性分
@@ -643,20 +651,20 @@ class LawSelectReward(ORM):
         # 检查是否覆盖了所有 ground truth
         coverage_ratio = min(n_selected, 10) / n_gt  # 最多按 10 条算覆盖
         
-        # 数量奖励
-        if 8 <= n_selected <= 10:
+        # 数量奖励（与 MAX_LAWS=10 对齐）
+        if 5 <= n_selected <= 10:
             # 理想范围
             quantity_score = 1.0
-        elif 5 <= n_selected < 8:
+        elif 3 <= n_selected < 5:
             # 略少
-            quantity_score = 0.9
+            quantity_score = 0.85
         elif n_selected > 10:
             # 超过 10 条，惩罚
             excess = n_selected - 10
             quantity_score = max(0.5, 1.0 - 0.05 * excess)  # 每多 1 条扣 0.05
         else:
-            # 太少（< 5 条）
-            quantity_score = 0.3 + 0.1 * n_selected
+            # 太少（< 3 条）
+            quantity_score = 0.2 + 0.15 * n_selected
         
         # 综合：覆盖率 * 数量奖励
         if coverage_ratio >= 1.0:
@@ -753,7 +761,166 @@ class AgentCombinedReward(ORM):
         return rewards
 
 
+# ============== LawSelect 奖励函数 V2（Top-5 精准版）==============
+class LawSelectRewardV2(ORM):
+    """
+    LawSelect 任务的奖励函数（v2 Top-5 精准版）
+    
+    目标：前 5 条法条中包含尽可能多的相关法条
+    
+    核心设计：
+    1. **Recall@5 最重要**：前 5 条中覆盖多少相关法条（0.45）
+    2. **Precision@5 次重要**：前 5 条中有多少是正确的（0.35）
+    3. **Recall@10 作为补充**：扩展到前 10 条的覆盖率（0.15）
+    4. **数量奖励**：鼓励输出 5-10 条（0.05）
+    
+    奖励公式（v2）：
+        Reward = 0.45 * Recall@5 + 0.35 * Precision@5 + 0.15 * Recall@10 + 0.05 * QuantityBonus
+    """
+    
+    def __init__(
+        self,
+        recall5_weight: float = 0.45,       # Recall@5 权重（最重要）
+        precision5_weight: float = 0.35,    # Precision@5 权重
+        recall10_weight: float = 0.15,      # Recall@10 作为补充
+        quantity_weight: float = 0.05,      # 数量奖励
+    ):
+        self.recall5_weight = recall5_weight
+        self.precision5_weight = precision5_weight
+        self.recall10_weight = recall10_weight
+        self.quantity_weight = quantity_weight
+    
+    def _parse_selected_laws(self, output: str) -> List[str]:
+        """解析 LLM 选定的法条 ID（保持顺序）"""
+        text = strip_code_fences(output)
+        if not text:
+            return []
+        
+        selected_ids = []
+        seen = set()
+        
+        # 尝试解析 JSON 对象
+        obj = json_raw_decode_from(text, '{')
+        if isinstance(obj, dict):
+            selected = obj.get("selected_articles", obj.get("selected", []))
+            if isinstance(selected, list):
+                for item in selected:
+                    law_id = None
+                    if isinstance(item, dict):
+                        law_id = item.get("law_id")
+                        if law_id is None:
+                            law_id = item.get("idx")
+                    elif isinstance(item, (str, int)):
+                        law_id = item
+                    
+                    if law_id:
+                        law_id = str(law_id)
+                        if law_id not in seen:
+                            selected_ids.append(law_id)
+                            seen.add(law_id)
+        
+        # 如果 JSON 解析失败，尝试正则匹配
+        if not selected_ids:
+            matches = re.findall(r'"law_id"\s*:\s*"?(\d+)"?', text)
+            for m in matches:
+                if m not in seen:
+                    selected_ids.append(m)
+                    seen.add(m)
+        
+        return selected_ids
+    
+    def _compute_recall_at_k(self, selected_ids: List[str], gt_laws: Set[str], k: int) -> float:
+        """计算 Recall@K：前 K 条中覆盖了多少比例的相关法条"""
+        if not gt_laws:
+            return 0.0
+        top_k = set(selected_ids[:k])
+        hits = len(top_k & gt_laws)
+        return hits / len(gt_laws)
+    
+    def _compute_precision_at_k(self, selected_ids: List[str], gt_laws: Set[str], k: int) -> float:
+        """计算 Precision@K：前 K 条中有多少比例是正确的"""
+        top_k = selected_ids[:k]
+        if not top_k:
+            return 0.0
+        hits = sum(1 for lid in top_k if lid in gt_laws)
+        return hits / len(top_k)
+    
+    def _compute_quantity_bonus(self, n_selected: int, n_gt: int) -> float:
+        """
+        计算数量奖励（目标 5-10 条）
+        
+        设计思路：
+        - 5-10 条是理想范围（与下游 MAX_LAWS=10 对齐）
+        - 少于 5 条可能遗漏，给予惩罚
+        - 多于 10 条可能有噪声，适度惩罚
+        """
+        if n_gt == 0:
+            return 0.5
+        
+        if 5 <= n_selected <= 10:
+            return 1.0
+        elif 3 <= n_selected < 5:
+            return 0.8
+        elif n_selected > 10:
+            excess = n_selected - 10
+            return max(0.5, 1.0 - 0.03 * excess)  # 每多 1 条扣 0.03
+        else:
+            # 少于 3 条
+            return 0.3 + 0.15 * n_selected
+    
+    def __call__(
+        self, 
+        completions: List[str], 
+        ground_truth_laws: List[str],
+        **kwargs
+    ) -> List[float]:
+        rewards = []
+        
+        for output, gt_json in zip(completions, ground_truth_laws):
+            # 解析真实标签
+            try:
+                gt_laws = set(str(x) for x in json.loads(gt_json))
+            except (json.JSONDecodeError, TypeError):
+                gt_laws = set()
+            
+            # 解析模型输出
+            selected_ids = self._parse_selected_laws(output)
+            
+            if not gt_laws:
+                rewards.append(0.5)
+                continue
+            
+            if not selected_ids:
+                rewards.append(0.05)
+                continue
+            
+            # 1. Recall@5（最重要：前 5 条覆盖多少相关法条）
+            recall5 = self._compute_recall_at_k(selected_ids, gt_laws, 5)
+            
+            # 2. Precision@5（前 5 条中有多少是正确的）
+            precision5 = self._compute_precision_at_k(selected_ids, gt_laws, 5)
+            
+            # 3. Recall@10（扩展覆盖率）
+            recall10 = self._compute_recall_at_k(selected_ids, gt_laws, 10)
+            
+            # 4. 数量奖励
+            quantity_bonus = self._compute_quantity_bonus(len(selected_ids), len(gt_laws))
+            
+            # 综合奖励
+            reward = (
+                self.recall5_weight * recall5 +
+                self.precision5_weight * precision5 +
+                self.recall10_weight * recall10 +
+                self.quantity_weight * quantity_bonus
+            )
+            
+            rewards.append(reward)
+        
+        return rewards
+
+
 # 注册奖励函数
 orms["query_gen_reward"] = QueryGenReward
 orms["law_select_reward"] = LawSelectReward
+orms["law_select_reward_v2"] = LawSelectRewardV2  # 新增 MRR 优先版
 orms["agent_combined_reward"] = AgentCombinedReward

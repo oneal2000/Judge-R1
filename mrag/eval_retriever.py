@@ -1,6 +1,11 @@
 """
 评测检索模型性能
-计算 Recall@K, Precision@K, MRR, MAP 等指标
+
+核心指标（针对法律文书生成任务）:
+- Recall@K: 最重要，确保关键法条被召回
+- Precision@K: 次重要，控制噪声
+
+注：MRR 适用于单答案检索任务，对于本任务中的多法条召回场景意义有限，故不作为主要评估指标。
 """
 import json
 import argparse
@@ -185,10 +190,6 @@ def main():
         print(f"Precision@{k}: {precision:.4f}{warning}")
         print("-" * 30)
     
-    mrr = compute_mrr(qrels, results)
-    metrics['MRR'] = mrr
-    
-    print(f"MRR: {mrr:.4f}")
     print("=" * 50)
     
     # 保存结果

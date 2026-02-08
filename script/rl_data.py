@@ -18,7 +18,7 @@ from difflib import SequenceMatcher
 
 # ============ 配置常量（与 sft_data.py 保持一致）============
 SYSTEM_PROMPT = "你是一个法律助理，提供帮助。"
-MAX_LAWS = 5          # 统一使用前5条法条
+MAX_LAWS = 10         # 统一使用前10条法条（与 Agent LawSelect 输出对齐）
 MAX_CASE_LENGTH = 2048  # 案例最大长度
 
 

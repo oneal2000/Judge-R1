@@ -3,28 +3,30 @@ set -euo pipefail
 
 cd /data-share/chenxuanyi/internship/JuDGE_RL
 
-# 根据MRAG模式选择文件后缀
-USE_MRAG=${USE_MRAG:-false}
-if [[ "${USE_MRAG}" == "true" ]]; then
-  SUFFIX="_mrag"
-else
-  SUFFIX=""
-fi
+# 所有模型前缀和实验模式
+PREFIXES="qwen25 qwen3"
+ALL_MODES="direct icl sft mrag rl sft_mrag sft_rl mrag_rl sft_mrag_rl"
 
-FILES=(
-    "outputs/qwen25_direct${SUFFIX}_raw.json:::outputs/qwen25_direct${SUFFIX}.jsonl"
-    "outputs/qwen25_icl${SUFFIX}_raw.json:::outputs/qwen25_icl${SUFFIX}.jsonl"
-    "outputs/qwen25_sft${SUFFIX}_raw.json:::outputs/qwen25_sft${SUFFIX}.jsonl"
-    "outputs/qwen25_rl${SUFFIX}_raw.json:::outputs/qwen25_rl${SUFFIX}.jsonl"
-    "outputs/qwen3_direct${SUFFIX}_raw.json:::outputs/qwen3_direct${SUFFIX}.jsonl"
-    "outputs/qwen3_icl${SUFFIX}_raw.json:::outputs/qwen3_icl${SUFFIX}.jsonl"
-    "outputs/qwen3_sft${SUFFIX}_raw.json:::outputs/qwen3_sft${SUFFIX}.jsonl"
-    "outputs/qwen3_rl${SUFFIX}_raw.json:::outputs/qwen3_rl${SUFFIX}.jsonl"
-)
+# 动态生成文件对列表
+FILES=()
+for prefix in $PREFIXES; do
+    for mode in $ALL_MODES; do
+        src="outputs/${prefix}_${mode}_raw.json"
+        dst="outputs/${prefix}_${mode}.jsonl"
+        if [ -f "${src}" ]; then
+            FILES+=("${src}:::${dst}")
+        fi
+    done
+done
+
+if [ ${#FILES[@]} -eq 0 ]; then
+    echo "⚠️  没有找到任何 _raw.json 文件，请先运行 bash bash/gen.sh"
+    exit 0
+fi
 
 echo "=========================================="
 echo "  格式转换"
-echo "  MRAG模式: ${USE_MRAG}"
+echo "  找到 ${#FILES[@]} 个文件待转换"
 echo "=========================================="
 
 python - <<PY

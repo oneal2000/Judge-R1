@@ -2,41 +2,77 @@
 set -euo pipefail
 cd /data-share/chenxuanyi/internship/JuDGE_RL
 
-# ============== 配置区（取消注释需要的配置）==============
+# ============== 参数化配置 ==============
+# 合并 SFT LoRA 模型到基座模型
+#
+# 注意: Agent RL 模型 (querygen/lawselect) 请使用专用脚本:
+#   bash bash/agent/merge_agent_lora.sh querygen
+#   bash bash/agent/merge_agent_lora.sh lawselect
+#
+# 通过 MERGE_CONFIG 环境变量选择要合并的 SFT 模型配置:
+#   sft_qwen3_mrag   - Qwen3-4B SFT MRAG 模型 (默认)
+#   sft_qwen3        - Qwen3-4B SFT 模型 (无MRAG)
+#   sft_qwen2_mrag   - Qwen2.5-3B SFT MRAG 模型
+#   sft_qwen2        - Qwen2.5-3B SFT 模型 (无MRAG)
+#
+# 也可直接通过 BASEMODEL, DIR, LORA_RANK, LORA_ALPHA 环境变量覆盖预设值
+#
+# 用法:
+#   bash bash/loramerge.sh                                  # 默认: sft_qwen3_mrag
+#   MERGE_CONFIG=sft_qwen3 bash bash/loramerge.sh           # Qwen3 SFT (无MRAG)
+#   MERGE_CONFIG=sft_qwen2 bash bash/loramerge.sh           # Qwen2.5 SFT (无MRAG)
+#   MERGE_CONFIG=sft_qwen2_mrag bash bash/loramerge.sh      # Qwen2.5 SFT MRAG
+# ========================================
 
-# ------ [1] SFT: Qwen3-4B-Thinking (MRAG) ------
-BASEMODEL="/data-share/chenxuanyi/LLM/Qwen3-4B-Thinking-2507"
-DIR="/data-share/chenxuanyi/internship/JuDGE_RL/output/sft_qwen3-4b_lora_mrag"
-LORA_RANK=128
-LORA_ALPHA=256
+MERGE_CONFIG="${MERGE_CONFIG:-sft_qwen3_mrag}"
 
-# ------ [2] SFT: Qwen2.5-3B-Instruct ------
-# BASEMODEL="/data-share/LLM/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1"
-# DIR="/data-share/chenxuanyi/internship/JuDGE_RL/output/sft_qwen2.5-3b_lora"
-# LORA_RANK=128
-# LORA_ALPHA=256
-
-# ------ [3] Agent RL: QueryGen 7B ------
-# BASEMODEL="/data-share/chenxuanyi/LLM/Qwen2.5-7B-Instruct"
-# DIR="/data-share/chenxuanyi/internship/JuDGE_RL/output/agent_rl_querygen_7b_v1_lora"
-# LORA_RANK=64
-# LORA_ALPHA=128
-
-# ------ [4] Agent RL: LawSelect 7B ------
-# BASEMODEL="/data-share/chenxuanyi/LLM/Qwen2.5-7B-Instruct"
-# DIR="/data-share/chenxuanyi/internship/JuDGE_RL/output/agent_rl_lawselect_7b_v1_lora"
-# LORA_RANK=64
-# LORA_ALPHA=128
+case "${MERGE_CONFIG}" in
+  sft_qwen3_mrag)
+    BASEMODEL="${BASEMODEL:-/data-share/chenxuanyi/LLM/Qwen3-4B-Thinking-2507}"
+    DIR="${DIR:-/data-share/chenxuanyi/internship/JuDGE_RL/output/sft_qwen3-4b_lora_mrag}"
+    LORA_RANK="${LORA_RANK:-128}"
+    LORA_ALPHA="${LORA_ALPHA:-256}"
+    ;;
+  sft_qwen3)
+    BASEMODEL="${BASEMODEL:-/data-share/chenxuanyi/LLM/Qwen3-4B-Thinking-2507}"
+    DIR="${DIR:-/data-share/chenxuanyi/internship/JuDGE_RL/output/sft_qwen3-4b_lora}"
+    LORA_RANK="${LORA_RANK:-128}"
+    LORA_ALPHA="${LORA_ALPHA:-256}"
+    ;;
+  sft_qwen2_mrag|sft_qwen25_mrag)
+    BASEMODEL="${BASEMODEL:-/data-share/LLM/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1}"
+    DIR="${DIR:-/data-share/chenxuanyi/internship/JuDGE_RL/output/sft_qwen2.5-3b_lora_mrag}"
+    LORA_RANK="${LORA_RANK:-128}"
+    LORA_ALPHA="${LORA_ALPHA:-256}"
+    ;;
+  sft_qwen2|sft_qwen25)
+    BASEMODEL="${BASEMODEL:-/data-share/LLM/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1}"
+    DIR="${DIR:-/data-share/chenxuanyi/internship/JuDGE_RL/output/sft_qwen2.5-3b_lora}"
+    LORA_RANK="${LORA_RANK:-128}"
+    LORA_ALPHA="${LORA_ALPHA:-256}"
+    ;;
+  *)
+    echo "[ERROR] 未知 MERGE_CONFIG=${MERGE_CONFIG}"
+    echo "可选 SFT 配置: sft_qwen3_mrag | sft_qwen3 | sft_qwen2_mrag | sft_qwen2"
+    echo ""
+    echo "Agent RL 模型请使用: bash bash/agent/merge_agent_lora.sh [querygen|lawselect]"
+    exit 1
+    ;;
+esac
 
 # LoRA Target Modules（通用，无需修改）
 # 注意：这必须与训练时的 target_modules 完全一致
 TARGET_MODULES="q_proj,k_proj,v_proj,o_proj"
 
 # =====================================
-echo "Base: ${BASEMODEL}"
-echo "Adapter Source: ${DIR}"
-echo "LoRA Config: rank=${LORA_RANK}, alpha=${LORA_ALPHA}"
-echo "Target Modules: ${TARGET_MODULES}"
+echo "=========================================="
+echo "  SFT LoRA 合并"
+echo "  配置: ${MERGE_CONFIG}"
+echo "  Base: ${BASEMODEL}"
+echo "  Adapter Source: ${DIR}"
+echo "  LoRA Config: rank=${LORA_RANK}, alpha=${LORA_ALPHA}"
+echo "  Target Modules: ${TARGET_MODULES}"
+echo "=========================================="
 
 # 检查是否需要提取 adapter
 if [ ! -f "${DIR}/adapter_config.json" ]; then

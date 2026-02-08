@@ -5,8 +5,12 @@ set -euo pipefail
 # 下载 LegalOne-4B 模型
 # ============================================================
 
-MODEL_ID="CSHaitao/LegalOne-4B"
-TARGET_DIR="/data-share/chenxuanyi/LLM/LegalOne-4B"
+MODEL_ID="${LEGALONE_MODEL_ID:-CSHaitao/LegalOne-4B}"
+# 优先级:
+#   1) LEGALONE_TARGET_DIR
+#   2) TARGET_DIR（兼容旧用法）
+#   3) 默认 ~/LLM/LegalOne-4B
+TARGET_DIR="${LEGALONE_TARGET_DIR:-${TARGET_DIR:-${HOME}/LLM/LegalOne-4B}}"
 
 echo "=========================================="
 echo "  下载 LegalOne-4B 模型"

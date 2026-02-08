@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 # ============ 配置常量（与训练数据保持一致）============
 SYSTEM_PROMPT = "你是一个法律助理，提供帮助。"
-MAX_LAWS = 5          # 统一使用前5条法条
+MAX_LAWS = 10         # 统一使用前10条法条（与 SFT/RL 训练数据对齐）
 MAX_CASE_LENGTH = 2048  # 案例最大长度
 
 
@@ -225,10 +225,10 @@ def main():
     # 检测是否为 MRAG 数据（通过文件名或内容判断）
     is_mrag = "mrag" in args.dataset_path.lower()
     if is_mrag:
-        max_model_len = 12288  # MRAG: 6000输入 + 4096输出 + buffer
+        max_model_len = 8096  # MRAG: 4000输入 + 3072输出 + buffer
         print(f"[INFO] MRAG 模式: max_model_len={max_model_len}")
     else:
-        max_model_len = 9216   # 标准: 3000输入 + 4096输出 + buffer
+        max_model_len = 5120   # 标准: 1500输入 + 3072输出 + buffer
         print(f"[INFO] 标准模式: max_model_len={max_model_len}")
 
     # 初始化 vLLM

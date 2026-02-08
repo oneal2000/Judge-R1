@@ -60,7 +60,7 @@ class LegalAidDataset(Dataset):
         target_txt = f"{example['output']}{self.tokenizer.eos_token}"
         tokenized_target = self.tokenizer(
             target_txt,
-            max_length=self.max_source,  # 先不限制长度
+            max_length=+ self.max_target, 
             truncation=True,
             add_special_tokens=False,
         )
@@ -68,7 +68,7 @@ class LegalAidDataset(Dataset):
 
         # 3. 截断策略（与 JuDGE 一致）
         # 优先保留完整的 input，只截断 output 的前面部分（保留后半部分）
-        total_max_len = self.max_source
+        total_max_len = self.max_source + + self.max_target
         
         if len(src_ids) + len(tgt_ids) > total_max_len:
             # 计算目标长度：优先保留 src_ids 完整
