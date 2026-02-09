@@ -41,6 +41,8 @@ def parse_arguments():
                         help="Inference mode to select correct prompt and params")
     parser.add_argument("--tensor_parallel_size", type=int, default=1, help="Number of GPUs")
     parser.add_argument("--gpu_memory_utilization", type=float, default=0.50, help="GPU memory utilization")
+    parser.add_argument("--max_num_seqs", type=int, default=16, help="vLLM max concurrent sequences")
+    parser.add_argument("--max_model_len", type=int, default=0, help="Override auto max_model_len when > 0")
     
     # 数据格式选项
     parser.add_argument("--use_formatted_data", action="store_true", default=True,
@@ -225,21 +227,28 @@ def main():
     # 检测是否为 MRAG 数据（通过文件名或内容判断）
     is_mrag = "mrag" in args.dataset_path.lower()
     if is_mrag:
-        max_model_len = 8096  # MRAG: 4000输入 + 3072输出 + buffer
+        max_model_len = 7500  # MRAG: 4000输入 + 3000输出 + buffer
         print(f"[INFO] MRAG 模式: max_model_len={max_model_len}")
     else:
-        max_model_len = 5120   # 标准: 1500输入 + 3072输出 + buffer
+        max_model_len = 3500   # 标准: 1500输入 + 3000输出 + buffer
         print(f"[INFO] 标准模式: max_model_len={max_model_len}")
+    if args.max_model_len > 0:
+        max_model_len = args.max_model_len
+        print(f"[INFO] 手动覆盖 max_model_len={max_model_len}")
 
     # 初始化 vLLM
-    gpu_mem_util = getattr(args, 'gpu_memory_utilization', 0.50)
-    print(f"[INFO] Initializing vLLM with TP={args.tensor_parallel_size}, gpu_mem_util={gpu_mem_util}...")
+    gpu_mem_util = getattr(args, 'gpu_memory_utilization', 0.40)
+    print(
+        f"[INFO] Initializing vLLM with TP={args.tensor_parallel_size}, "
+        f"gpu_mem_util={gpu_mem_util}, max_num_seqs={args.max_num_seqs}..."
+    )
     llm = LLM(
         model=args.model_path,
         tensor_parallel_size=args.tensor_parallel_size,
         trust_remote_code=True,
         gpu_memory_utilization=gpu_mem_util,
         max_model_len=max_model_len,
+        max_num_seqs=args.max_num_seqs,
     )
     tokenizer = llm.get_tokenizer()
     

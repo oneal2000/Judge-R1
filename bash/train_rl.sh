@@ -61,12 +61,12 @@ esac
 # 根据MRAG模式选择数据目录
 if [[ "${USE_MRAG}" == "true" ]]; then
   DATA_DIR="${ROOT}/data/rl_train_mrag"
-  MAX_INPUT_LENGTH=4000  # MRAG需要更长输入
+  MAX_INPUT_LENGTH=6000  # MRAG需要更长输入
   MRAG_SUFFIX="_mrag"
   echo "[CONFIG] MRAG模式: 输入长度=${MAX_INPUT_LENGTH}"
 else
   DATA_DIR="${ROOT}/data/rl_train"
-  MAX_INPUT_LENGTH=1500  # 标准模式较短即可
+  MAX_INPUT_LENGTH=3000  # 标准模式较短即可
   MRAG_SUFFIX=""
   echo "[CONFIG] 标准模式: 输入长度=${MAX_INPUT_LENGTH}"
 fi
@@ -74,7 +74,7 @@ fi
 # SFT模型路径（自动根据 MODEL_NAME + MRAG 推导，可通过环境变量覆盖）
 SFT_MODEL_DEFAULT="${SFT_MODEL_DEFAULT:-${ROOT}/output/sft_${MODEL_LABEL}_lora${MRAG_SUFFIX}/merge}"
 
-MAX_OUTPUT_LENGTH=3000
+MAX_OUTPUT_LENGTH=4096
 
 MASTER_PORT=${MASTER_PORT:-27001}
 VLLM_HOST=${VLLM_HOST:-127.0.0.1}
@@ -145,12 +145,12 @@ COMMON_ARGS=(
   --per_device_train_batch_size 1
   --gradient_accumulation_steps 16
   --learning_rate "${LEARNING_RATE}"
-  --num_generations 8
+  --num_generations 16
   --temperature 0.8
-  --save_steps 70
+  --save_steps 250
   --save_only_model true
   --save_total_limit 5
-  --logging_steps 1
+  --logging_steps 5
   --output_dir "${OUT_DIR}"
   --warmup_ratio 0.03
   --dataloader_num_workers 4
