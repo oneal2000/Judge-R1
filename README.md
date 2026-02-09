@@ -433,16 +433,6 @@ This is expected and does not affect results. Check logs for `percentage: '100.0
 
 **Do not mix**: use `loramerge.sh` for SFT models, `merge_agent_lora.sh` for Agent RL models.
 
-## Citation
-
-```bibtex
-@misc{judge_rl_2026,
-  title={JuDGE\_RL: Retrieval-Grounded Reinforcement Learning for Judgment Document Generation},
-  author={Chen Xuanyi},
-  year={2026},
-  howpublished={\url{https://github.com/chenxuanyi-hub/JuDGE_RL}}
-}
-```
 
 ## License
 
