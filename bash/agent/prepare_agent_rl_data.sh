@@ -7,11 +7,12 @@
 # 2. LawSelect: 从候选法条中筛选相关法条
 
 set -e
-
-ROOT="/data-share/chenxuanyi/internship/JuDGE_RL"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../paths.sh"
+ROOT="${PROJECT_ROOT}"
 
 # 添加项目根目录到 PYTHONPATH，确保模块可以正确导入
-export PYTHONPATH="${ROOT}:${PYTHONPATH}"
+export PYTHONPATH="${ROOT}:${PYTHONPATH:-}"
 
 # 数据路径
 TRAIN_DATA="${ROOT}/data/train.json"

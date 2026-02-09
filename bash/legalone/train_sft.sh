@@ -16,17 +16,19 @@ USE_MRAG=${USE_MRAG:-false}
 MASTER_PORT=${MASTER_PORT:-29651}
 INCLUDE=${INCLUDE:-"localhost:2"}
 
-cd /data-share/chenxuanyi/internship/JuDGE_RL
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../paths.sh"
+cd "${PROJECT_ROOT}"
 
 # 选择模型
 case "${LEGALONE_MODEL_SET}" in
     4b)
-        MODEL="${LEGALONE_4B_MODEL_PATH:-/data-share/chenxuanyi/LLM/LegalOne-4B}"
+        MODEL="${LEGALONE_4B_MODEL_PATH}"
         MODEL_TAG="legalone-4b"
         MODEL_NAME_SHOW="LegalOne-4B"
         ;;
     1.7b|1_7b|17b)
-        MODEL="${LEGALONE_17B_MODEL_PATH:-/data-share/chenxuanyi/LLM/LegalOne-1.7B}"
+        MODEL="${LEGALONE_17B_MODEL_PATH}"
         MODEL_TAG="legalone-1.7b"
         MODEL_NAME_SHOW="LegalOne-1.7B"
         ;;

@@ -21,14 +21,14 @@
 # ===========================================
 
 set -e
-
-PROJECT_ROOT="/data-share/chenxuanyi/internship/JuDGE_RL"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../paths.sh"
 
 # 添加项目根目录到 PYTHONPATH
-export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
 
 # ============== CUDA 环境 ==============
-export CUDA_HOME="${CUDA_HOME:-/usr/local/cuda-12.4}"
+export CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
 export PATH="${CUDA_HOME}/bin:${PATH}"
 export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}"
 export VLLM_USE_V1=1
@@ -40,8 +40,8 @@ export CUDA_VISIBLE_DEVICES
 GPU_MEMORY_UTIL=${GPU_MEMORY_UTIL:-0.85}
 
 # 基座 LLM 模型
-BASE_MODEL_7B="/data-share/chenxuanyi/LLM/Qwen2.5-7B-Instruct"
-BASE_MODEL_3B="/data-share/LLM/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1"
+BASE_MODEL_7B="${QWEN25_7B_MODEL_PATH}"
+BASE_MODEL_3B="${QWEN25_MODEL_PATH}"
 if [[ -d "$BASE_MODEL_7B" ]]; then
     BASE_MODEL="$BASE_MODEL_7B"
 else

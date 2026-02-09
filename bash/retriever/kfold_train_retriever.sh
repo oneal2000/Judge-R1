@@ -13,12 +13,12 @@
 
 # set -e
 # export TOKENIZERS_PARALLELISM=false
-# PROJECT_ROOT="/data-share/chenxuanyi/internship/JuDGE_RL"
+# PROJECT_ROOT="(set via paths.sh)"
 # KFOLD_DATA_DIR="${PROJECT_ROOT}/mrag/kfold_data"
 # KFOLD_OUTPUT_DIR="${PROJECT_ROOT}/mrag/kfold_output"
 
 # # 模型配置
-# BASE_MODEL="/data-share/chenxuanyi/LLM/chinese-roberta-wwm"
+# BASE_MODEL="${ROBERTA_MODEL_PATH}"
 # LAW_CORPUS="${PROJECT_ROOT}/data/law_corpus.jsonl"
 
 # # K-Fold 配置
@@ -263,12 +263,13 @@
 
 set -e
 export TOKENIZERS_PARALLELISM=false
-PROJECT_ROOT="/data-share/chenxuanyi/internship/JuDGE_RL"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../paths.sh"
 KFOLD_DATA_DIR="${PROJECT_ROOT}/mrag/kfold_data"
 KFOLD_OUTPUT_DIR="${PROJECT_ROOT}/mrag/kfold_output"
 
 # 模型配置
-BASE_MODEL="/data-share/chenxuanyi/LLM/chinese-roberta-wwm"
+BASE_MODEL="${ROBERTA_MODEL_PATH}"
 LAW_CORPUS="${PROJECT_ROOT}/data/law_corpus.jsonl"
 
 # K-Fold 配置

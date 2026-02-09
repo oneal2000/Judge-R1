@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd /data-share/chenxuanyi/internship/JuDGE_RL
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/paths.sh"
+cd "${PROJECT_ROOT}"
 
 # ============================================================
 # 数据生成脚本

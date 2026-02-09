@@ -1,10 +1,10 @@
 # #!/bin/bash
 set -e
-
-PROJECT_ROOT="/data-share/chenxuanyi/internship/JuDGE_RL"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../paths.sh"
 RERANKER_DIR="${PROJECT_ROOT}/reranker"
 
-PRETRAINED_MODEL="/data-share/chenxuanyi/LLM/chinese-roberta-wwm"
+PRETRAINED_MODEL="${ROBERTA_MODEL_PATH}"
 
 # K-Fold 合并后的数据
 RUNFILE="${PROJECT_ROOT}/mrag/retriever_output/law_runfile_train_kfold.tsv"

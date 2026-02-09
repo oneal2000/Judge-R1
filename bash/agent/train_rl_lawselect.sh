@@ -17,7 +17,9 @@
 
 set -euo pipefail
 
-ROOT="/data-share/chenxuanyi/internship/JuDGE_RL"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../paths.sh"
+ROOT="${PROJECT_ROOT}"
 export PYTHONPATH="${ROOT}:${PYTHONPATH:-}"
 export TOKENIZERS_PARALLELISM=false
 export TRANSFORMERS_VERBOSITY=error
@@ -29,7 +31,7 @@ export VLLM_USE_FLASHINFER_SAMPLER=0
 
 # ============== 配置 ==============
 # 使用 7B 模型（更强的语义理解能力）
-BASE_MODEL="/data-share/chenxuanyi/LLM/Qwen2.5-7B-Instruct"
+BASE_MODEL="${QWEN25_7B_MODEL_PATH}"
 MODEL_TYPE="qwen2"
 MASTER_PORT="${MASTER_PORT:-27101}"
 

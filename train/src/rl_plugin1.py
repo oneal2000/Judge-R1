@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 # ============== 环境变量配置（支持用户覆盖）==============
 # 优先级: 函数参数 > 环境变量 > 默认相对路径
-DEFAULT_BERT_MODEL_PATH = "/data-share/chenxuanyi/LLM/bert-base-chinese"
+DEFAULT_BERT_MODEL_PATH = os.environ.get("BERT_MODEL_PATH", "bert-base-chinese")
 EVAL_DIR = ROOT / "evaluation"
 if str(EVAL_DIR) not in sys.path:
     sys.path.insert(0, str(EVAL_DIR))

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd /data-share/chenxuanyi/internship/JuDGE_RL
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../paths.sh"
+cd "${PROJECT_ROOT}"
 mkdir -p outputs
 
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
@@ -26,8 +28,8 @@ MAX_NUM_SEQS=${MAX_NUM_SEQS:-64}
 MAX_MODEL_LEN=${MAX_MODEL_LEN:-0}  # 0 表示按 inf.py 自动推断
 
 # 模型路径（可覆盖）
-BASE_MODEL_4B=${BASE_MODEL_4B:-/data-share/chenxuanyi/LLM/LegalOne-4B}
-BASE_MODEL_17B=${BASE_MODEL_17B:-/data-share/chenxuanyi/LLM/LegalOne-1.7B}
+BASE_MODEL_4B="${LEGALONE_4B_MODEL_PATH}"
+BASE_MODEL_17B="${LEGALONE_17B_MODEL_PATH}"
 
 # 根据 MRAG 模式选择数据集和 SFT 模型
 if [[ "${USE_MRAG}" == "true" ]]; then

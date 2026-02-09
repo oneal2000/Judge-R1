@@ -1,3 +1,4 @@
+import os
 import jieba
 from bert_score import score
 import json
@@ -67,7 +68,7 @@ class RelevanceEvaluator:
 
     def calc_bert_score(self):
         """计算 BERTScore"""
-        local_model_path = "/data-share/chenxuanyi/LLM/bert-base-chinese" # 如果未下载过，会自动下载
+        local_model_path = os.environ.get("BERT_MODEL_PATH", "bert-base-chinese")  # Set via bash/paths.sh or env var
         gen_reasoning_list, exp_reasoning_list, gen_judge_list, exp_judge_list = [], [], [], []
         for exp_idx, exp_ans in self.exp_data.items():
             gen_ans = self.gen_data[exp_idx]

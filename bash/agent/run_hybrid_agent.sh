@@ -18,9 +18,9 @@
 # ===========================================
 
 set -e
-
-PROJECT_ROOT="/data-share/chenxuanyi/internship/JuDGE_RL"
-export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../paths.sh"
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
 
 OUTPUT_DIR="${PROJECT_ROOT}/mrag/retriever_output"
 QRELS_FILE="${PROJECT_ROOT}/mrag/retriever_data/qrels_test.tsv"

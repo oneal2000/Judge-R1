@@ -10,7 +10,7 @@ set -euo pipefail
 #   LEGALONE_MODEL_SET=4b bash bash/legalone/download_model.sh
 # ============================================================
 
-LEGALONE_ROOT_DIR="${LEGALONE_ROOT_DIR:-/data-share/chenxuanyi/LLM}"
+LEGALONE_ROOT_DIR="${LEGALONE_ROOT_DIR:-./models}"
 LEGALONE_MODEL_SET="${LEGALONE_MODEL_SET:-all}"   # all | 4b | 1.7b
 
 # 向后兼容: 若手动指定 MODEL_ID，则按旧逻辑下载单模型

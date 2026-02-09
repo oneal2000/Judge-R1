@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="/data-share/chenxuanyi/internship/JuDGE_RL"
+# Load centralized path configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/paths.sh"
+ROOT="${PROJECT_ROOT}"
 
 # ============== 参数化配置 ==============
 # 环境变量:
@@ -43,17 +46,17 @@ USE_MRAG=${USE_MRAG:-false}
 # 根据 MODEL_NAME 设置模型路径和类型
 case "${MODEL_NAME}" in
   qwen3)
-    BASE_MODEL_DEFAULT="/data-share/chenxuanyi/LLM/Qwen3-4B-Thinking-2507"
+    BASE_MODEL_DEFAULT="${QWEN3_MODEL_PATH}"
     MODEL_TYPE="${MODEL_TYPE:-qwen3_thinking}"
     MODEL_LABEL="qwen3-4b"
     ;;
   qwen2|qwen2.5)
-    BASE_MODEL_DEFAULT="/data-share/LLM/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1"
+    BASE_MODEL_DEFAULT="${QWEN25_MODEL_PATH}"
     MODEL_TYPE="${MODEL_TYPE:-qwen2}"
     MODEL_LABEL="qwen2.5-3b"
     ;;
   *)
-    echo "[ERROR] 未知 MODEL_NAME=${MODEL_NAME}，可选: qwen3 | qwen2"
+    echo "[ERROR] Unknown MODEL_NAME=${MODEL_NAME}, options: qwen3 | qwen2"
     exit 1
     ;;
 esac

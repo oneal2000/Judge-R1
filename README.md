@@ -44,11 +44,11 @@ Case Fact Description
 +-------------------+     +-------------------------------+
 |   MRAG Path       |     |    LLM Agent Path             |
 |                   |     |                               |
-| Fact -> Dense ->  |     | Fact -> QueryGen(LLM) ->     |
-|   Reranker -> K   |     |   Dense -> Reranker ->       |
-|                   |     |   LawSelect(LLM) -> refined  |
-| Strength:         |     | Strength:                    |
-|   High recall     |     |   High precision             |
+| Fact -> Dense ->  |     | Fact -> QueryGen(LLM) ->      |
+|   Reranker -> K   |     |   Dense -> Reranker ->        |
+|                   |     |   LawSelect(LLM) -> refined   |
+| Strength:         |     | Strength:                     |
+|   High recall     |     |   High precision              |
 +--------+----------+     +--------------+----------------+
          |                               |
          +---------------+---------------+
@@ -62,16 +62,16 @@ Case Fact Description
     +--------------------------------------+
     |     Judgment Generation Model        |
     |                                      |
-    |  Stage 1: SFT (LoRA)                |
+    |  Stage 1: SFT (LoRA)                 |
     |    Supervised fine-tuning with       |
     |    reference judgments               |
     |                                      |
-    |  Stage 2: GRPO (full-parameter)     |
-    |    Reward = 0.60 * Legal Accuracy   |
-    |           + 0.30 * Text Quality     |
-    |           + 0.10 * Reasoning Form   |
+    |  Stage 2: GRPO (full-parameter)      |
+    |    Reward = 0.60 * Legal Accuracy    |
+    |           + 0.30 * Text Quality      |
+    |           + 0.10 * Reasoning Form    |
     |                                      |
-    |  Base: Qwen3-4B / Qwen2.5-3B       |
+    |  Base: Qwen3-4B / Qwen2.5-3B         |
     +------------------+-------------------+
                        v
                Complete Judgment
@@ -222,6 +222,30 @@ conda create -n vllm  python=3.10 -y && conda activate vllm  && pip install -r r
 | chinese-roberta-wwm-ext | Retriever / Reranker | [HuggingFace](https://huggingface.co/hfl/chinese-roberta-wwm-ext) |
 | Qwen3-4B | Thinking model experiments | [HuggingFace](https://huggingface.co/Qwen/Qwen3-4B) |
 | Qwen2.5-7B-Instruct | Agent (QueryGen/LawSelect) | [HuggingFace](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct) |
+
+### **>>> Path Configuration (IMPORTANT — Read Before Running) <<<**
+
+**All model paths are centralized in a single file: `bash/paths.sh`.** Before running any script, you **must** edit this file to point to your local model directories:
+
+```bash
+# bash/paths.sh — edit these paths to match your environment
+
+export QWEN3_MODEL_PATH="/path/to/Qwen3-4B"
+export QWEN25_MODEL_PATH="/path/to/Qwen2.5-3B-Instruct"
+export QWEN25_7B_MODEL_PATH="/path/to/Qwen2.5-7B-Instruct"
+export ROBERTA_MODEL_PATH="/path/to/chinese-roberta-wwm-ext"
+export BERT_MODEL_PATH="/path/to/bert-base-chinese"
+export LEGALONE_4B_MODEL_PATH="/path/to/LegalOne-4B"        # optional
+export LEGALONE_17B_MODEL_PATH="/path/to/LegalOne-1.7B"     # optional
+```
+
+Every shell script automatically sources `bash/paths.sh` and validates that the required model directory exists before proceeding. **If a path is wrong, the script will print a clear error message and exit.**
+
+You can also override any path via environment variable without editing the file:
+
+```bash
+QWEN3_MODEL_PATH=/my/models/Qwen3-4B bash bash/train_sft.sh
+```
 
 ## Reproduction
 

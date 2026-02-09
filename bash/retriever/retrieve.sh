@@ -3,7 +3,8 @@
 
 set -e
 
-PROJECT_ROOT="/data-share/chenxuanyi/internship/JuDGE_RL"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../paths.sh"
 
 # 路径配置
 MODEL_PATH="${PROJECT_ROOT}/output/law_retriever"

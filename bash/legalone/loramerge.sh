@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd /data-share/chenxuanyi/internship/JuDGE_RL
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../paths.sh"
+cd "${PROJECT_ROOT}"
 
 # ============================================================
 # LegalOne-4B LoRA 合并脚本
@@ -11,15 +13,15 @@ cd /data-share/chenxuanyi/internship/JuDGE_RL
 # ============================================================
 
 # LegalOne-4B 基座模型
-BASEMODEL="/data-share/chenxuanyi/LLM/LegalOne-4B"
+BASEMODEL="${LEGALONE_4B_MODEL_PATH}"
 
 USE_MRAG=${USE_MRAG:-false}
 
 # 根据 MRAG 模式选择 SFT 输出目录
 if [[ "${USE_MRAG}" == "true" ]]; then
-    DIR="/data-share/chenxuanyi/internship/JuDGE_RL/output/sft_legalone-4b_lora_mrag"
+    DIR="${PROJECT_ROOT}/output/sft_legalone-4b_lora_mrag"
 else
-    DIR="/data-share/chenxuanyi/internship/JuDGE_RL/output/sft_legalone-4b_lora"
+    DIR="${PROJECT_ROOT}/output/sft_legalone-4b_lora"
 fi
 
 # LoRA 配置 (与 Qwen3-4B-Thinking 保持一致)

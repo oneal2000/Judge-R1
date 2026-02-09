@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd /data-share/chenxuanyi/internship/JuDGE_RL/evaluation
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../paths.sh"
+cd "${PROJECT_ROOT}/evaluation"
 
 # ============================================================
 # LegalOne 评估脚本（4B + 1.7B）
@@ -16,7 +18,7 @@ else
     SUFFIX=""
 fi
 
-EXP_FILE="/data-share/chenxuanyi/internship/JuDGE_RL/data/expected.jsonl"
+EXP_FILE="${PROJECT_ROOT}/data/expected.jsonl"
 
 MODEL_PREFIXES=()
 case "${LEGALONE_MODEL_SET}" in

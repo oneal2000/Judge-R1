@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd /data-share/chenxuanyi/internship/JuDGE_RL
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/paths.sh"
+cd "${PROJECT_ROOT}"
 
 # ============== 参数化配置 ==============
 # 合并 SFT LoRA 模型到基座模型
@@ -28,26 +30,26 @@ MERGE_CONFIG="${MERGE_CONFIG:-sft_qwen3_mrag}"
 
 case "${MERGE_CONFIG}" in
   sft_qwen3_mrag)
-    BASEMODEL="${BASEMODEL:-/data-share/chenxuanyi/LLM/Qwen3-4B-Thinking-2507}"
-    DIR="${DIR:-/data-share/chenxuanyi/internship/JuDGE_RL/output/sft_qwen3-4b_lora_mrag}"
+    BASEMODEL="${BASEMODEL:-${QWEN3_MODEL_PATH}}"
+    DIR="${DIR:-${PROJECT_ROOT}/output/sft_qwen3-4b_lora_mrag}"
     LORA_RANK="${LORA_RANK:-128}"
     LORA_ALPHA="${LORA_ALPHA:-256}"
     ;;
   sft_qwen3)
-    BASEMODEL="${BASEMODEL:-/data-share/chenxuanyi/LLM/Qwen3-4B-Thinking-2507}"
-    DIR="${DIR:-/data-share/chenxuanyi/internship/JuDGE_RL/output/sft_qwen3-4b_lora}"
+    BASEMODEL="${BASEMODEL:-${QWEN3_MODEL_PATH}}"
+    DIR="${DIR:-${PROJECT_ROOT}/output/sft_qwen3-4b_lora}"
     LORA_RANK="${LORA_RANK:-128}"
     LORA_ALPHA="${LORA_ALPHA:-256}"
     ;;
   sft_qwen2_mrag|sft_qwen25_mrag)
-    BASEMODEL="${BASEMODEL:-/data-share/LLM/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1}"
-    DIR="${DIR:-/data-share/chenxuanyi/internship/JuDGE_RL/output/sft_qwen2.5-3b_lora_mrag}"
+    BASEMODEL="${BASEMODEL:-${QWEN25_MODEL_PATH}}"
+    DIR="${DIR:-${PROJECT_ROOT}/output/sft_qwen2.5-3b_lora_mrag}"
     LORA_RANK="${LORA_RANK:-128}"
     LORA_ALPHA="${LORA_ALPHA:-256}"
     ;;
   sft_qwen2|sft_qwen25)
-    BASEMODEL="${BASEMODEL:-/data-share/LLM/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1}"
-    DIR="${DIR:-/data-share/chenxuanyi/internship/JuDGE_RL/output/sft_qwen2.5-3b_lora}"
+    BASEMODEL="${BASEMODEL:-${QWEN25_MODEL_PATH}}"
+    DIR="${DIR:-${PROJECT_ROOT}/output/sft_qwen2.5-3b_lora}"
     LORA_RANK="${LORA_RANK:-128}"
     LORA_ALPHA="${LORA_ALPHA:-256}"
     ;;

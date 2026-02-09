@@ -10,10 +10,12 @@
 # ===========================================
 
 set -euo pipefail
-cd /data-share/chenxuanyi/internship/JuDGE_RL
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../paths.sh"
+cd "${PROJECT_ROOT}"
 
 # 基座模型
-BASEMODEL="/data-share/chenxuanyi/LLM/Qwen2.5-7B-Instruct"
+BASEMODEL="${QWEN25_7B_MODEL_PATH}"
 
 # LoRA 目录映射
 declare -A LORA_DIRS=(

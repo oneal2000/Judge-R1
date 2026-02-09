@@ -1,7 +1,8 @@
 #!/bin/bash
 set -e
 
-PROJECT_ROOT="/data-share/chenxuanyi/internship/JuDGE_RL"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../paths.sh"
 
 # 路径配置
 DENSE_RUNFILE="${PROJECT_ROOT}/mrag/retriever_output/law_runfile_test.tsv"

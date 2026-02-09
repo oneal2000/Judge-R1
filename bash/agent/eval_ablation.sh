@@ -3,19 +3,19 @@
 # 用法: CUDA_VISIBLE_DEVICES=0 bash bash/agent/eval_ablation.sh
 
 set -e
-
-PROJECT_ROOT="/data-share/chenxuanyi/internship/JuDGE_RL"
-export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../paths.sh"
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
 
 # CUDA 环境
-export CUDA_HOME="/usr/local/cuda-12.4"
+export CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
 export PATH="${CUDA_HOME}/bin:${PATH}"
 export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}"
 export VLLM_USE_V1=1
 export VLLM_USE_FLASHINFER_SAMPLER=0
 
 # ============== 模型配置 ==============
-BASE_MODEL="/data-share/chenxuanyi/LLM/Qwen2.5-7B-Instruct"
+BASE_MODEL="${QWEN25_7B_MODEL_PATH}"
 QUERYGEN_RL_MERGED="${PROJECT_ROOT}/output/rl_querygen_7b_lora/merge"
 LAWSELECT_RL_MERGED="${PROJECT_ROOT}/output/rl_lawselect_7b_lora/merge"
 DENSE_MODEL="${PROJECT_ROOT}/output/law_retriever"

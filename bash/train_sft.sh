@@ -23,23 +23,29 @@ USE_MRAG=${USE_MRAG:-false}
 MASTER_PORT=${MASTER_PORT:-29650}
 VISIBLE_GPUS="${CUDA_VISIBLE_DEVICES:-0,3,4,7}"
 INCLUDE="${INCLUDE:-localhost:${VISIBLE_GPUS}}"
-cd /data-share/chenxuanyi/internship/JuDGE_RL
+
+# Load centralized path configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/paths.sh"
+cd "${PROJECT_ROOT}"
 
 # 根据 MODEL_NAME 设置模型路径和标签
 case "${MODEL_NAME}" in
   qwen3)
-    MODEL="${MODEL:-/data-share/chenxuanyi/LLM/Qwen3-4B-Thinking-2507}"
+    MODEL="${MODEL:-${QWEN3_MODEL_PATH}}"
     MODEL_LABEL="qwen3-4b"
     ;;
   qwen2|qwen2.5)
-    MODEL="${MODEL:-/data-share/LLM/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1}"
+    MODEL="${MODEL:-${QWEN25_MODEL_PATH}}"
     MODEL_LABEL="qwen2.5-3b"
     ;;
   *)
-    echo "[ERROR] 未知 MODEL_NAME=${MODEL_NAME}，可选: qwen3 | qwen2"
+    echo "[ERROR] Unknown MODEL_NAME=${MODEL_NAME}, options: qwen3 | qwen2"
     exit 1
     ;;
 esac
+
+validate_path "MODEL" "${MODEL}"
 
 # 根据 MRAG 模式选择训练数据
 if [[ "${USE_MRAG}" == "true" ]]; then

@@ -2,12 +2,12 @@
 # 使用 Reranker 对测试集进行重排序
 
 set -e
-
-PROJECT_ROOT="/data-share/chenxuanyi/internship/JuDGE_RL"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../paths.sh"
 RERANKER_DIR="${PROJECT_ROOT}/reranker"
 
 # 预训练模型路径
-PRETRAINED_MODEL="/data-share/chenxuanyi/LLM/chinese-roberta-wwm"
+PRETRAINED_MODEL="${ROBERTA_MODEL_PATH}"
 
 # 训练好的 Reranker 模型
 RERANKER_MODEL="${RERANKER_DIR}/train"

@@ -3,11 +3,11 @@
 # 只输出最终对比报告，自动清理所有中间文件
 
 set -e
-
-PROJECT_ROOT="/data-share/chenxuanyi/internship/JuDGE_RL"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../paths.sh"
 
 # 模型路径
-BASE_MODEL="/data-share/chenxuanyi/LLM/chinese-roberta-wwm"
+BASE_MODEL="${ROBERTA_MODEL_PATH}"
 TRAINED_MODEL="${PROJECT_ROOT}/output/law_retriever"
 
 # 使用临时目录存储中间文件

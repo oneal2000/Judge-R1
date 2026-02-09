@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd /data-share/chenxuanyi/internship/JuDGE_RL
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/paths.sh"
+cd "${PROJECT_ROOT}"
 mkdir -p outputs
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
@@ -47,8 +49,8 @@ SCRIPT="train/deploy/inf.py"
 [[ "${MODES}" == "all" ]] && MODES="direct,icl,sft,mrag,rl,sft_mrag,sft_rl,mrag_rl,sft_mrag_rl"
 
 # ========== 基座模型路径 ==========
-QWEN3_BASE="/data-share/chenxuanyi/LLM/Qwen3-4B-Thinking-2507"
-QWEN25_BASE="/data-share/LLM/models--Qwen--Qwen2.5-3B-Instruct/snapshots/aa8e72537993ba99e69dfaafa59ed015b17504d1"
+QWEN3_BASE="${QWEN3_MODEL_PATH}"
+QWEN25_BASE="${QWEN25_MODEL_PATH}"
 
 # ========== SFT 模型路径 ==========
 SFT_QWEN3="${SFT_QWEN3:-output/sft_qwen3-4b_lora/merge}"
