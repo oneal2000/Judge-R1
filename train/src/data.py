@@ -23,11 +23,12 @@ class LegalAidDataset(Dataset):
                 if not item:
                     continue
                 
-                input_content = f"""
-任务背景: 根据以下提供的案件事实，生成一份完整的刑法判决书。判决书需包括案件事实、法律分析、裁判理由以及最终裁判结论。
-本案件事实：{item['input']}
-本案件的完整判决书为：
-"""
+                # item['input'] 已经是 sft_data.py 格式化好的 prompt
+                # （标准模式或 MRAG 模式），直接作为 user content 使用，
+                # 不要再包一层 prompt 模板，否则会导致 SFT 训练与推理的
+                # prompt 不一致。
+                input_content = item['input']
+
                 messages = [
                     {"role": "system", "content": "你是一个法律助理，提供帮助。"},
                     {"role": "user", "content": input_content}

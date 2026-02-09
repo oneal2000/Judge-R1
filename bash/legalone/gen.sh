@@ -16,7 +16,7 @@ export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
 # ============================================================
 
 USE_MRAG=${USE_MRAG:-false}
-LEGALONE_MODEL_SET=${LEGALONE_MODEL_SET:-all}   # all | 4b | 1.7b
+LEGALONE_MODEL_SET=${LEGALONE_MODEL_SET:-4b}   # all | 4b | 1.7b
 MODES=${MODES:-direct,icl,sft}                  # direct,icl,sft
 SCRIPT="train/deploy/inf.py"
 

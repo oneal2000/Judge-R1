@@ -224,13 +224,15 @@ def main():
         print(f"[INFO] 使用原始数据格式，将在线构建 prompt")
     
     # 设置 max_model_len
-    # 检测是否为 MRAG 数据（通过文件名或内容判断）
+    # 必须保证 max_model_len >= prompt_tokens + max_tokens(4096)，
+    # 否则 vLLM 会将实际输出截断到 max_model_len - prompt_tokens，
+    # 导致推理输出上限远小于 SFT 训练时的 max_tar=4096。
     is_mrag = "mrag" in args.dataset_path.lower()
     if is_mrag:
-        max_model_len = 7500  # MRAG: 4000输入 + 3000输出 + buffer
+        max_model_len = 8500  # MRAG: ~4000输入 + 4096输出 + buffer
         print(f"[INFO] MRAG 模式: max_model_len={max_model_len}")
     else:
-        max_model_len = 3500   # 标准: 1500输入 + 3000输出 + buffer
+        max_model_len = 6000   # 标准: ~1500输入 + 4096输出 + buffer
         print(f"[INFO] 标准模式: max_model_len={max_model_len}")
     if args.max_model_len > 0:
         max_model_len = args.max_model_len

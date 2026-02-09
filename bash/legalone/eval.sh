@@ -8,7 +8,7 @@ cd /data-share/chenxuanyi/internship/JuDGE_RL/evaluation
 # ============================================================
 
 USE_MRAG=${USE_MRAG:-false}
-LEGALONE_MODEL_SET=${LEGALONE_MODEL_SET:-all}   # all | 4b | 1.7b
+LEGALONE_MODEL_SET=${LEGALONE_MODEL_SET:-4b}   # all | 4b | 1.7b
 
 if [[ "${USE_MRAG}" == "true" ]]; then
     SUFFIX="_mrag"
