@@ -247,6 +247,63 @@ You can also override any path via environment variable without editing the file
 QWEN3_MODEL_PATH=/my/models/Qwen3-4B bash bash/train_sft.sh
 ```
 
+### Trained Model Paths in gen.sh
+
+`bash/paths.sh` manages paths for **downloaded base models** only. In addition, `bash/gen.sh` contains paths for **trained model outputs** — SFT merged models and RL checkpoints — which point to directories under `output/` created by the training scripts.
+
+**SFT model paths** default to `output/sft_*/merge` and typically do not need manual adjustment, because the merge script (`loramerge.sh`) always writes to the same `merge/` subdirectory:
+
+```bash
+# gen.sh — SFT paths (usually no changes needed)
+SFT_QWEN3="${SFT_QWEN3:-output/sft_qwen3-4b_lora/merge}"
+SFT_MRAG_QWEN3="${SFT_MRAG_QWEN3:-output/sft_qwen3-4b_lora_mrag/merge}"
+```
+
+**RL checkpoint paths require manual configuration.** RL training (ms-swift GRPO) generates output directories with version timestamps, for example:
+
+```
+output/rl_qwen3-4b_grpo_sft_full/v19-20260116-061030/checkpoint-501
+```
+
+The path must point to a **specific checkpoint directory** with full model weights. The default values in `gen.sh` will NOT work unless your training happens to produce the exact same version directory names.
+
+**How to find your checkpoint path** — after RL training completes, inspect the output:
+
+```bash
+ls output/rl_qwen3-4b_grpo_sft_full/
+# v19-20260116-061030/
+
+ls output/rl_qwen3-4b_grpo_sft_full/v19-20260116-061030/
+# checkpoint-167/  checkpoint-334/  checkpoint-501/
+```
+
+Pick the final (or best) checkpoint and set the full path in `gen.sh`.
+
+**Configuration methods** — edit `gen.sh` directly or override via environment variables:
+
+```bash
+# Method 1: Edit gen.sh directly
+RL_SFT_QWEN3_PATH="${RL_SFT_QWEN3_PATH:-output/rl_qwen3-4b_grpo_sft_full/v19-20260116-061030/checkpoint-501}"
+
+# Method 2: Override via environment variable at runtime
+RL_SFT_QWEN3_PATH=output/rl_qwen3-4b_grpo_sft_full/v19-20260116-061030/checkpoint-501 \
+RL_SFT_QWEN25_PATH=output/rl_qwen2.5-3b_grpo_sft_full/v17-20260117-091241/checkpoint-501 \
+  MODES=sft_rl bash bash/gen.sh
+```
+
+**All RL path variables in gen.sh:**
+
+| Variable | Description | Example Value |
+|----------|-------------|---------------|
+| `RL_BASE_QWEN3_PATH` | Qwen3 Base→RL | `output/rl_qwen3-4b_grpo_full/<version>/checkpoint-<step>` |
+| `RL_BASE_QWEN25_PATH` | Qwen2.5 Base→RL | `output/rl_qwen2.5-3b_grpo_full/<version>/checkpoint-<step>` |
+| `RL_SFT_QWEN3_PATH` | Qwen3 SFT→RL | `output/rl_qwen3-4b_grpo_sft_full/<version>/checkpoint-<step>` |
+| `RL_SFT_QWEN25_PATH` | Qwen2.5 SFT→RL | `output/rl_qwen2.5-3b_grpo_sft_full/<version>/checkpoint-<step>` |
+| `RL_BASE_MRAG_QWEN3_PATH` | Qwen3 Base→RL + MRAG | `output/rl_qwen3-4b_grpo_mrag_full/<version>/checkpoint-<step>` |
+| `RL_BASE_MRAG_QWEN25_PATH` | Qwen2.5 Base→RL + MRAG | `output/rl_qwen2.5-3b_grpo_mrag_full/<version>/checkpoint-<step>` |
+| `RL_SFT_MRAG_QWEN3_PATH` | Qwen3 SFT+MRAG→RL | `output/rl_qwen3-4b_grpo_sft_mrag_full/<version>/checkpoint-<step>` |
+| `RL_SFT_MRAG_QWEN25_PATH` | Qwen2.5 SFT+MRAG→RL | `output/rl_qwen2.5-3b_grpo_sft_mrag_full/<version>/checkpoint-<step>` |
+
 ## Reproduction
 
 ### Phase A: Data Preparation

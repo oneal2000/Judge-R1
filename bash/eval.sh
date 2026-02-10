@@ -8,7 +8,6 @@ cd "${PROJECT_ROOT}/evaluation"
 # 所有模型前缀和实验模式
 PREFIXES="qwen25 qwen3"
 ALL_MODES="direct icl sft mrag rl sft_mrag sft_rl mrag_rl sft_mrag_rl"
-
 EXP_FILE="${PROJECT_ROOT}/data/expected.jsonl"
 
 # 动态收集所有存在的 .jsonl 文件

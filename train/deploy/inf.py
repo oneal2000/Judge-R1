@@ -239,7 +239,7 @@ def main():
         print(f"[INFO] 手动覆盖 max_model_len={max_model_len}")
 
     # 初始化 vLLM
-    gpu_mem_util = getattr(args, 'gpu_memory_utilization', 0.40)
+    gpu_mem_util = getattr(args, 'gpu_memory_utilization', 0.30)
     print(
         f"[INFO] Initializing vLLM with TP={args.tensor_parallel_size}, "
         f"gpu_mem_util={gpu_mem_util}, max_num_seqs={args.max_num_seqs}..."

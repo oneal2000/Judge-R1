@@ -5,7 +5,7 @@ source "${SCRIPT_DIR}/paths.sh"
 cd "${PROJECT_ROOT}"
 mkdir -p outputs
 
-export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-5}"
 TP_SIZE="${TP_SIZE:-1}"
 
 # ===========================================
@@ -58,32 +58,20 @@ SFT_MRAG_QWEN3="${SFT_MRAG_QWEN3:-output/sft_qwen3-4b_lora_mrag/merge}"
 SFT_QWEN25="${SFT_QWEN25:-output/sft_qwen2.5-3b_lora/merge}"
 SFT_MRAG_QWEN25="${SFT_MRAG_QWEN25:-output/sft_qwen2.5-3b_lora_mrag/merge}"
 
-# # ========== RL 模型路径（默认指向 output 目录，按需通过环境变量覆盖）==========
-# # Base → RL（无MRAG）
-# RL_BASE_QWEN3_PATH="${RL_BASE_QWEN3_PATH:-output/rl_qwen3-4b_grpo_base_full}"
-# RL_BASE_QWEN25_PATH="${RL_BASE_QWEN25_PATH:-output/rl_qwen2.5-3b_grpo_base_full}"
-# # SFT → RL（无MRAG）
-# RL_SFT_QWEN3_PATH="${RL_SFT_QWEN3_PATH:-output/rl_qwen3-4b_grpo_sft_full}"
-# RL_SFT_QWEN25_PATH="${RL_SFT_QWEN25_PATH:-output/rl_qwen2.5-3b_grpo_sft_full}"
-# # Base → RL（有MRAG）
-# RL_BASE_MRAG_QWEN3_PATH="${RL_BASE_MRAG_QWEN3_PATH:-output/rl_qwen3-4b_grpo_base_mrag_full}"
-# RL_BASE_MRAG_QWEN25_PATH="${RL_BASE_MRAG_QWEN25_PATH:-output/rl_qwen2.5-3b_grpo_base_mrag_full}"
-# # SFT+MRAG → RL
-# RL_SFT_MRAG_QWEN3_PATH="${RL_SFT_MRAG_QWEN3_PATH:-output/rl_qwen3-4b_grpo_sft_mrag_full}"
-# RL_SFT_MRAG_QWEN25_PATH="${RL_SFT_MRAG_QWEN25_PATH:-output/rl_qwen2.5-3b_grpo_sft_mrag_full}"
 # ========== RL 模型路径（默认指向 output 目录，按需通过环境变量覆盖）==========
 # Base → RL（无MRAG）
-RL_BASE_QWEN3_PATH="${RL_BASE_QWEN3_PATH:-output/rl_qwen3-4b_grpo_full/v1-20260118-210344/checkpoint-501}"
-RL_BASE_QWEN25_PATH="${RL_BASE_QWEN25_PATH:-output/rl_qwen2.5-3b_grpo_full/v1-20260122-173008/checkpoint-501}"
+RL_BASE_QWEN3_PATH="${RL_BASE_QWEN3_PATH:-output/rl_qwen3-4b_grpo_base_full}"
+RL_BASE_QWEN25_PATH="${RL_BASE_QWEN25_PATH:-output/rl_qwen2.5-3b_grpo_base_full}"
 # SFT → RL（无MRAG）
-RL_SFT_QWEN3_PATH="${RL_SFT_QWEN3_PATH:-output/rl_qwen3-4b_grpo_sft_full/v19-20260116-061030/checkpoint-501}"
-RL_SFT_QWEN25_PATH="${RL_SFT_QWEN25_PATH:-output/rl_qwen2.5-3b_grpo_sft_full/v17-20260117-091241/checkpoint-501}"
+RL_SFT_QWEN3_PATH="${RL_SFT_QWEN3_PATH:-output/rl_qwen3-4b_grpo_sft_full}"
+RL_SFT_QWEN25_PATH="${RL_SFT_QWEN25_PATH:-output/rl_qwen2.5-3b_grpo_sft_full}"
 # Base → RL（有MRAG）
-RL_BASE_MRAG_QWEN3_PATH="${RL_BASE_MRAG_QWEN3_PATH:-output/rl_qwen3-4b_grpo_full/v1-20260118-210344/checkpoint-501}"
-RL_BASE_MRAG_QWEN25_PATH="${RL_BASE_MRAG_QWEN25_PATH:-output/rl_qwen2.5-3b_grpo_full/v1-20260122-173008/checkpoint-501}"
+RL_BASE_MRAG_QWEN3_PATH="${RL_BASE_MRAG_QWEN3_PATH:-output/rl_qwen3-4b_grpo_base_mrag_full}"
+RL_BASE_MRAG_QWEN25_PATH="${RL_BASE_MRAG_QWEN25_PATH:-output/rl_qwen2.5-3b_grpo_base_mrag_full}"
 # SFT+MRAG → RL
-RL_SFT_MRAG_QWEN3_PATH="${RL_SFT_MRAG_QWEN3_PATH:-output/rl_qwen3-4b_grpo_sft_full/v19-20260116-061030/checkpoint-501}"
-RL_SFT_MRAG_QWEN25_PATH="${RL_SFT_MRAG_QWEN25_PATH:-output/rl_qwen2.5-3b_grpo_sft_full/v17-20260117-091241/checkpoint-501}"
+RL_SFT_MRAG_QWEN3_PATH="${RL_SFT_MRAG_QWEN3_PATH:-output/rl_qwen3-4b_grpo_sft_mrag_full}"
+RL_SFT_MRAG_QWEN25_PATH="${RL_SFT_MRAG_QWEN25_PATH:-output/rl_qwen2.5-3b_grpo_sft_mrag_full}"
+
 # ========== 数据集路径 ==========
 DATASET_RAW="data/test.json"
 DATASET_SFT="data/test_sft.json"
@@ -123,7 +111,8 @@ run_inference() {
         --dataset_path "${dataset}" \
         --output_path "${output}" \
         --mode "${inf_mode}" \
-        --tensor_parallel_size $TP_SIZE
+        --tensor_parallel_size $TP_SIZE \
+        --gpu_memory_utilization 0.3
 }
 
 # 根据 model_family 和 exp_mode 分发推理任务
