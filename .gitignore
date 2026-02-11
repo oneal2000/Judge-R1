@@ -18,7 +18,10 @@ outputs/
 # ============================================
 mrag/kfold_data/
 mrag/kfold_output/
-mrag/retriever_output/
+mrag/retriever_output/*
+# 保留 Agent 检索的可解释性输出和评估结果（评测需要）
+!mrag/retriever_output/ablation_both_rl_details.json
+!mrag/retriever_output/ablation_both_rl_eval.txt
 mrag/retriever_data/*.jsonl
 mrag/retriever_data/*.json
 mrag/retriever_data/*.tsv
@@ -36,6 +39,8 @@ reranker/reranker_train*.json
 # ============================================
 data/train_sft*.json
 data/test_sft*.json
+# 保留 MRAG 测试集（评测人直接推理需要）
+!data/test_sft_mrag.json
 data/test_mrag*.json
 data/rl_train/
 data/rl_train_mrag/

@@ -304,7 +304,122 @@ RL_SFT_QWEN25_PATH=output/rl_qwen2.5-3b_grpo_sft_full/v17-20260117-091241/checkp
 | `RL_SFT_MRAG_QWEN3_PATH` | Qwen3 SFT+MRAG→RL | `output/rl_qwen3-4b_grpo_sft_mrag_full/<version>/checkpoint-<step>` |
 | `RL_SFT_MRAG_QWEN25_PATH` | Qwen2.5 SFT+MRAG→RL | `output/rl_qwen2.5-3b_grpo_sft_mrag_full/<version>/checkpoint-<step>` |
 
-## Reproduction
+## Quick Start: Evaluation Only (No Training Required)
+
+If you only want to **reproduce the main experiment results** without training, follow these steps. The pre-trained model checkpoint is available on Google Drive.
+
+### Prerequisites
+
+| Item | How to Get |
+|------|------------|
+| Model checkpoint (`checkpoint-501/`) | Download from Google Drive (link provided separately) |
+| `bert-base-chinese` | Download from [HuggingFace](https://huggingface.co/google-bert/bert-base-chinese) (required for BERTScore in evaluation) |
+| GPU | 1x GPU with >= 16GB VRAM (inference only) |
+
+### Step 1: Environment Setup
+
+Only two environments are needed for evaluation:
+
+```bash
+# For inference (vLLM)
+conda create -n swift python=3.10 -y && conda activate swift
+pip install -r requirements_swift.txt
+
+# For evaluation metrics (BERTScore, METEOR)
+conda create -n judge python=3.10 -y && conda activate judge
+pip install -r requirements_judge.txt
+```
+
+### Step 2: Place the Model Checkpoint
+
+Download the checkpoint and place it under the project:
+
+```bash
+# Example: place checkpoint at output/sft_mrag_rl_model/
+mkdir -p output/sft_mrag_rl_model
+# Copy or move all files from the downloaded checkpoint-501/ into this directory
+cp -r /path/to/downloaded/checkpoint-501/* output/sft_mrag_rl_model/
+```
+
+Verify the directory contains model files:
+
+```bash
+ls output/sft_mrag_rl_model/
+# config.json  model-00001-of-00002.safetensors  model-00002-of-00002.safetensors
+# model.safetensors.index.json  tokenizer.json  tokenizer_config.json  ...
+```
+
+### Step 3: Run Inference
+
+```bash
+conda activate swift
+export CUDA_VISIBLE_DEVICES=0
+
+# Main experiment: SFT+MRAG+RL model on MRAG test set
+python train/deploy/inf.py \
+    --model_path output/sft_mrag_rl_model \
+    --dataset_path data/test_sft_mrag.json \
+    --output_path outputs/qwen3_sft_mrag_rl_raw.json \
+    --mode rl \
+    --tensor_parallel_size 1 \
+    --gpu_memory_utilization 0.85
+```
+
+### Step 4: Convert Output Format
+
+```bash
+# Convert inference output to evaluation format
+mkdir -p outputs
+python -c "
+import json
+fd2id = {}
+with open('data/test.json', 'r') as f:
+    for line in f:
+        obj = json.loads(line)
+        fd2id[obj['fd']] = obj['text_id']
+
+data = json.load(open('outputs/qwen3_sft_mrag_rl_raw.json', 'r'))
+with open('outputs/qwen3_sft_mrag_rl.jsonl', 'w') as out:
+    for item in data:
+        cid = item.get('text_id') or fd2id.get(item.get('exp_ans'))
+        gen = item.get('gen_ans')
+        if cid and gen is not None:
+            out.write(json.dumps({'id': cid, 'document': gen}, ensure_ascii=False) + '\n')
+print('Converted to outputs/qwen3_sft_mrag_rl.jsonl')
+"
+```
+
+### Step 5: Evaluate
+
+```bash
+conda activate judge
+export BERT_MODEL_PATH="/path/to/bert-base-chinese"   # Required for BERTScore
+
+cd evaluation
+
+# Legal accuracy (Crime F1, Law Article F1, Prison Score, Fine Score)
+python calc.py \
+    --gen_file ../outputs/qwen3_sft_mrag_rl.jsonl \
+    --exp_file ../data/expected.jsonl
+
+# Text quality (METEOR, BERTScore)
+python calc_rel.py \
+    --gen_file ../outputs/qwen3_sft_mrag_rl.jsonl \
+    --exp_file ../data/expected.jsonl
+```
+
+### Pre-computed Retrieval Results
+
+The MRAG test set (`data/test_sft_mrag.json`) already contains pre-computed retrieval results embedded in each prompt (top-10 statutes + similar cases). No retrieval models are needed for evaluation.
+
+To inspect the retrieval quality and explainability:
+
+- **`mrag/retriever_output/ablation_both_rl_eval.txt`** — Retrieval evaluation metrics (Recall@K, MRR, etc.)
+- **`mrag/retriever_output/ablation_both_rl_details.json`** — Per-case explainability: generated queries, selected statutes with reasons, rejected statutes with reasons
+
+---
+
+## Full Reproduction (Training from Scratch)
 
 ### Phase A: Data Preparation
 
