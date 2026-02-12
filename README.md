@@ -205,15 +205,6 @@ conda create -n judge python=3.10 -y && conda activate judge && pip install -r r
 conda create -n vllm  python=3.10 -y && conda activate vllm  && pip install -r requirements_vllm.txt
 ```
 
-### Hardware
-
-| Task | Minimum | Recommended |
-|------|---------|-------------|
-| SFT (LoRA) | 1x A100 40GB | 2x A100 80GB |
-| RL (GRPO, full) | 2x A100 80GB | 4x A100 80GB |
-| Agent RL (7B) | 4x A100 80GB | 4x A100 80GB |
-| Inference (vLLM) | 1x A100 40GB | 1x A100 80GB |
-
 ### Models
 
 | Model | Purpose | Link |
@@ -312,7 +303,7 @@ If you only want to **reproduce the main experiment results** without training, 
 
 | Item | How to Get |
 |------|------------|
-| Model checkpoint (`checkpoint-501/`) | Download from Google Drive (link provided separately) |
+| Model checkpoint (`JuDGE_RL.tar.gz`) | [Download from Google Drive](https://drive.google.com/file/d/1lquq4EePHRQWE8wOWdsFwEUpNzyiZolx/view?usp=sharing) (~8GB, SFT+MRAG+RL trained Qwen3-4B) |
 | `bert-base-chinese` | Download from [HuggingFace](https://huggingface.co/google-bert/bert-base-chinese) (required for BERTScore in evaluation) |
 | GPU | 1x GPU with >= 16GB VRAM (inference only) |
 
@@ -330,21 +321,28 @@ conda create -n judge python=3.10 -y && conda activate judge
 pip install -r requirements_judge.txt
 ```
 
-### Step 2: Place the Model Checkpoint
+### Step 2: Download and Extract the Model Checkpoint
 
-Download the checkpoint and place it under the project:
+Download `JuDGE_RL.tar.gz` from Google Drive and extract it:
 
 ```bash
-# Example: place checkpoint at output/sft_mrag_rl_model/
-mkdir -p output/sft_mrag_rl_model
-# Copy or move all files from the downloaded checkpoint-501/ into this directory
-cp -r /path/to/downloaded/checkpoint-501/* output/sft_mrag_rl_model/
+# Method 1: Download via browser, then extract
+tar -xzf JuDGE_RL.tar.gz -C .
+
+# Method 2: Download via gdown (pip install gdown)
+gdown 1lquq4EePHRQWE8wOWdsFwEUpNzyiZolx
+tar -xzf JuDGE_RL.tar.gz -C .
 ```
 
-Verify the directory contains model files:
+After extraction, check the model directory path and note it for the next step:
 
 ```bash
-ls output/sft_mrag_rl_model/
+# List extracted contents to find the model path
+ls -la
+# Example: checkpoint-501/ or sft_mrag_rl_model/
+
+# Verify the directory contains model files
+ls checkpoint-501/   # or your extracted directory name
 # config.json  model-00001-of-00002.safetensors  model-00002-of-00002.safetensors
 # model.safetensors.index.json  tokenizer.json  tokenizer_config.json  ...
 ```
@@ -356,8 +354,9 @@ conda activate swift
 export CUDA_VISIBLE_DEVICES=0
 
 # Main experiment: SFT+MRAG+RL model on MRAG test set
+# Replace <MODEL_PATH> with your extracted model directory (e.g., checkpoint-501)
 python train/deploy/inf.py \
-    --model_path output/sft_mrag_rl_model \
+    --model_path <MODEL_PATH> \
     --dataset_path data/test_sft_mrag.json \
     --output_path outputs/qwen3_sft_mrag_rl_raw.json \
     --mode rl \
@@ -578,22 +577,6 @@ Evaluation first segments the judgment into "reasoning" and "sentencing" section
 | Retrieval components | Dense only vs Dense+Reranker | `eval_retriever.sh` output |
 | Agent components | +/-QueryGen RL x +/-LawSelect RL | `eval_ablation.sh` output |
 | Retrieval source | MRAG vs Agent vs Hybrid | `eval_ablation.sh` + `fuse_results.py` output |
-
-## FAQ
-
-**Q: CUDA OOM during GRPO training?**
-Reduce `num_generations` (default 16, try 4 or 8) in `bash/train_rl.sh`. This is the most effective way to reduce memory usage.
-
-**Q: Training instability?**
-Increase `beta` (KL penalty) to 0.1, reduce learning rate to 1e-6, or increase `gradient_accumulation_steps`.
-
-**Q: How to resume interrupted training?**
-```bash
-bash bash/train_rl.sh --resume_from_checkpoint output/rl_xxx/checkpoint-xxx
-```
-
-**Q: Segfault after Agent RL training with vLLM colocate?**
-This is expected and does not affect results. Check logs for `percentage: '100.00%'` and `Saving model checkpoint` to confirm success.
 
 ## LoRA Merge Guide
 
