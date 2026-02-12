@@ -112,8 +112,9 @@ Case Fact -> QueryGen (5-8 queries) -> Dense (top-50) -> Reranker (top-20) -> La
 
 Two retrieval paths are merged via **output-level fusion**:
 
-- **Agent-First (recommended)**: Keep all Agent outputs (filtered by LawSelect), supplement with MRAG results not covered by Agent.
-- **RRF**: Reciprocal Rank Fusion weighted by source reliability.
+- **RRF (recommended)**: Reciprocal Rank Fusion weighted by source reliability.
+- **Agent-First**: Keep all Agent outputs (filtered by LawSelect), supplement with MRAG results not covered by Agent.
+
 
 ### 4. Judgment Generation
 
@@ -313,8 +314,8 @@ Only two environments are needed for evaluation:
 
 ```bash
 # For inference (vLLM)
-conda create -n swift python=3.10 -y && conda activate swift
-pip install -r requirements_swift.txt
+conda create -n vllm python=3.10 -y && conda activate vllm
+pip install -r requirements_vllm.txt
 
 # For evaluation metrics (BERTScore, METEOR)
 conda create -n judge python=3.10 -y && conda activate judge
@@ -337,20 +338,18 @@ tar -xzf JuDGE_RL.tar.gz -C .
 After extraction, check the model directory path and note it for the next step:
 
 ```bash
-# List extracted contents to find the model path
-ls -la
-# Example: checkpoint-501/ or sft_mrag_rl_model/
 
 # Verify the directory contains model files
-ls checkpoint-501/   # or your extracted directory name
+ls JuDGE_R1/release_model   # or your extracted directory name
 # config.json  model-00001-of-00002.safetensors  model-00002-of-00002.safetensors
-# model.safetensors.index.json  tokenizer.json  tokenizer_config.json  ...
+# model.safetensors.index.json  tokenizer.json  added_tokens.json  
+#merges.txt  special_tokens_map.json  chat_template.jinja
+#vocab.json  generation_config.json
 ```
-
 ### Step 3: Run Inference
 
 ```bash
-conda activate swift
+conda activate vllm
 export CUDA_VISIBLE_DEVICES=0
 
 # Main experiment: SFT+MRAG+RL model on MRAG test set

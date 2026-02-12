@@ -1,9 +1,9 @@
-torch==2.7.1
-transformers==4.55.4
+torch==2.8.0
+transformers==4.57.6
 deepspeed==0.16.9
 peft==0.17.1
 trl==0.20.0
-ms-swift==3.7.2
+ms-swift==3.9.3
 tqdm==4.67.1
 numpy==2.2.6
 jieba==0.42.1
