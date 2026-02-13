@@ -26,10 +26,6 @@ export ROBERTA_MODEL_PATH="${ROBERTA_MODEL_PATH:-/path/to/chinese-roberta-wwm-ex
 # -------- BERT model (for BERTScore in RL reward) --------
 export BERT_MODEL_PATH="${BERT_MODEL_PATH:-/path/to/bert-base-chinese}"
 
-# -------- LegalOne baseline models (optional) --------
-export LEGALONE_4B_MODEL_PATH="${LEGALONE_4B_MODEL_PATH:-/path/to/LegalOne-4B}"
-export LEGALONE_17B_MODEL_PATH="${LEGALONE_17B_MODEL_PATH:-/path/to/LegalOne-1.7B}"
-
 # -------- Validation helper --------
 validate_path() {
     local name="$1" path="$2"

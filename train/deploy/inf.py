@@ -56,17 +56,10 @@ def strip_think(text: str, model_path: str = "") -> str:
     
     支持多种格式:
     - Qwen3-Thinking: </think> 标记
-    - LegalOne: [最终回答] 标记
     """
     # Qwen3-Thinking 格式
     if "</think>" in text:
         return text.split("</think>", 1)[1].strip()
-    
-    # LegalOne 格式 - 多种可能的标记
-    legalone_markers = ["[最终回答]", "【最终回答】", "[Final Answer]", "最终回答：", "最终回答:"]
-    for marker in legalone_markers:
-        if marker in text:
-            return text.split(marker, 1)[1].strip()
     
     return text.strip()
 
@@ -74,12 +67,7 @@ def strip_think(text: str, model_path: str = "") -> str:
 def is_thinking_model(model_path: str) -> bool:
     """判断是否为 Thinking 模型（Qwen3-Thinking）"""
     model_path_lower = model_path.lower()
-    return ("qwen3" in model_path_lower or "thinking" in model_path_lower) and "legalone" not in model_path_lower
-
-
-def is_legalone_model(model_path: str) -> bool:
-    """判断是否为 LegalOne 模型"""
-    return "legalone" in model_path.lower()
+    return "qwen3" in model_path_lower or "thinking" in model_path_lower
 
 
 # ================= Prompt 构建函数（与训练数据完全一致）=================

@@ -169,7 +169,6 @@ JuDGE_RL/
 │   ├── agent/                      # LLM Agent
 │   ├── retriever/                  # Dense Retriever
 │   ├── reranker/                   # Reranker
-│   ├── legalone/                   # LegalOne baseline
 │   ├── data_train.sh               # Generate SFT/RL training data
 │   ├── train_sft.sh                # SFT training
 │   ├── train_rl.sh                 # RL (GRPO) training
@@ -227,8 +226,6 @@ export QWEN25_MODEL_PATH="/path/to/Qwen2.5-3B-Instruct"
 export QWEN25_7B_MODEL_PATH="/path/to/Qwen2.5-7B-Instruct"
 export ROBERTA_MODEL_PATH="/path/to/chinese-roberta-wwm-ext"
 export BERT_MODEL_PATH="/path/to/bert-base-chinese"
-export LEGALONE_4B_MODEL_PATH="/path/to/LegalOne-4B"        # optional
-export LEGALONE_17B_MODEL_PATH="/path/to/LegalOne-1.7B"     # optional
 ```
 
 Every shell script automatically sources `bash/paths.sh` and validates that the required model directory exists before proceeding. **If a path is wrong, the script will print a clear error message and exit.**
@@ -477,20 +474,11 @@ MODEL_NAME=qwen2 bash bash/train_rl.sh
 MODEL_NAME=qwen2 USE_MRAG=true bash bash/train_rl.sh
 ```
 
-### Phase E: LegalOne Baseline (Optional)
-
-```bash
-bash bash/legalone/train_sft.sh
-USE_MRAG=true bash bash/legalone/train_sft.sh
-bash bash/legalone/loramerge.sh
-```
-
-### Phase F: Inference
+### Phase E: Inference
 
 ```bash
 conda activate swift
 MODES=all bash bash/gen.sh      # All models x all 9 modes
-bash bash/legalone/gen.sh       # LegalOne baseline
 ```
 
 **9 inference modes:**
@@ -507,14 +495,14 @@ bash bash/legalone/gen.sh       # LegalOne baseline
 | `mrag_rl` | Base->RL | MRAG | RL + retrieval |
 | `sft_mrag_rl` | SFT+MRAG->RL | MRAG | **Full pipeline (best)** |
 
-### Phase G: Evaluation
+### Phase F: Evaluation
 
 ```bash
 conda activate swift
-bash bash/convert.sh && bash bash/legalone/convert.sh
+bash bash/convert.sh
 
 conda activate judge
-bash bash/eval.sh && bash bash/legalone/eval.sh
+bash bash/eval.sh
 
 cat result/eval_summary.txt
 ```
@@ -570,7 +558,7 @@ Evaluation first segments the judgment into "reasoning" and "sentencing" section
 
 | Experiment | Comparison | Output Files |
 |------------|-----------|--------------|
-| Base model | Qwen2.5 vs Qwen3 vs LegalOne | `qwen25_*` / `qwen3_*` / `legalone_*` |
+| Base model | Qwen2.5 vs Qwen3 | `qwen25_*` / `qwen3_*` |
 | Training stage | Direct -> ICL -> SFT -> SFT+RL | `*_direct` / `*_icl` / `*_sft` / `*_sft_rl` |
 | Retrieval augmentation | w/o retrieval vs MRAG | `*_sft` vs `*_sft_mrag` |
 | Retrieval + RL | SFT+RL vs SFT+MRAG+RL | `*_sft_rl` vs `*_sft_mrag_rl` |
@@ -584,7 +572,6 @@ Evaluation first segments the judgment into "reasoning" and "sentencing" section
 |--------|-------|-------|
 | `bash/loramerge.sh` | SFT models (Qwen3/Qwen2.5) | Includes extract_lora step for DeepSpeed |
 | `bash/agent/merge_agent_lora.sh` | Agent RL models | Auto-finds latest checkpoint (ms-swift) |
-| `bash/legalone/loramerge.sh` | LegalOne SFT models | LegalOne-specific |
 
 **Do not mix**: use `loramerge.sh` for SFT models, `merge_agent_lora.sh` for Agent RL models.
 
