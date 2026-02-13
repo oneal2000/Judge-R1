@@ -349,6 +349,8 @@ ls JuDGE_R1/release_model   # or your extracted directory name
 ### Step 3: Run Inference
 
 ```bash
+cd Judge-R1
+mkdir -p outputs
 conda activate vllm
 export CUDA_VISIBLE_DEVICES=0
 
@@ -367,7 +369,6 @@ python train/deploy/inf.py \
 
 ```bash
 # Convert inference output to evaluation format
-mkdir -p outputs
 python -c "
 import json
 fd2id = {}
