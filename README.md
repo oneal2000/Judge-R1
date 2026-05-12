@@ -1,6 +1,6 @@
 # JuDGE_RL
 
-**Retrieval-Grounded Reinforcement Learning for Judgment Document Generation**
+**Enhancing Judgment Document Generation via Agentic Legal Information Collection and Rubric-Guided Optimization**
 
 ## Abstract
 
